@@ -9,7 +9,9 @@
       "Bash(PYTHONPATH=src python3 -m tradebot.cli --mode simulated:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(tradebot llm-check:*)",
+      "Bash(tradebot notify-test:*)"
     ],
     "deny": [
       "Read(./.env)",

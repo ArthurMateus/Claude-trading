@@ -11,7 +11,7 @@ Branch with the v0.1 build: claude/trusting-noether-rb2slp (merge it to main fir
 
 Start by reading, in this order: CLAUDE.md, docs/ASSESSMENT.md, docs/ARCHITECTURE.md, docs/AGENTS.md,
 docs/SDLC.md, docs/OPEN_QUESTIONS.md, docs/LOCAL_SETUP.md. Then run:
-  bash scripts/setup_local.sh                               (36 tests must pass, offline)
+  bash scripts/setup_local.sh                               (all tests must pass, offline)
   tradebot --mode simulated --offline cycle                 (offline smoke run)
 
 WHAT IT IS
@@ -33,7 +33,12 @@ DECISIONS I ALREADY MADE (don't re-ask)
 - LLM "Option 3": Opus 5.5 orchestrator; cheaper models (Haiku 4.5 / Sonnet 5.5) for every sub-agent. Hard
   limits stay in code; LLMs can only make safety decisions stricter.
 - Holding period: minutes to max 4 hours. Spot, long-only (Alpaca crypto can't short).
-- Account: $500 for paper (allocated_capital_usd: 500). LLM budget $2/day; per-cycle LLM reviews off.
+- Account: $500 for paper (allocated_capital_usd: 500). Per-cycle LLM reviews off.
+- NO PAID API: the AI agents run through my Claude Pro subscription via `claude -p` (llm.backend: claude_cli).
+  Pro includes a $20/month credit for that; the bot caps itself at $18/month and $0.60/day and strips
+  ANTHROPIC_API_KEY from the CLI env. I keep "usage credits" off in claude.ai, so running out just pauses calls.
+  Do not switch me to the paid API or enable X/CryptoPanic without asking.
+- Alerts go to Discord via DISCORD_WEBHOOK_URL (notify.py).
 - No personal setups: use the diverse 8-setup library; every setup must pass the backtest gate on real data.
 - News: free sources (Alpaca/Benzinga, CoinDesk/Cointelegraph/Decrypt RSS, Reddit) + X/Twitter opt-in via
   X_BEARER_TOKEN (capped 100 posts/day, charged to the daily budget) + CryptoPanic opt-in.
@@ -54,15 +59,17 @@ RULES FOR YOU
 - Ask me before deciding anything listed in docs/OPEN_QUESTIONS.md.
 
 CURRENT STATUS
-- v0.2 complete and tested offline (36 tests). NOT yet verified against real APIs: the Alpaca adapter and the
-  live news feeds (the build sandbox blocked those hosts). Not built yet: alerts, derivatives flow data.
+- v0.3 complete and tested offline (45 tests); the claude -p backend was verified with real calls. NOT yet
+  verified against real services: the Alpaca adapter, live news feeds and the Discord webhook (the build sandbox
+  blocked those hosts). Not built: derivatives flow data.
 - On random-walk data every setup fails the backtest gate once fees are included (as it should). Real
   profitability depends on setups that pass on real Alpaca history.
 
 NEXT STEPS
-1. Help me through docs/LOCAL_SETUP.md on my machine (venv, .env, Alpaca paper reset to $500).
-2. Run `tradebot validate` on real history and report with the backtest-gate skill.
+1. Help me through docs/LOCAL_SETUP.md on my machine (venv, claude login, .env, Alpaca paper reset to $500).
+2. Run `tradebot llm-check` and `tradebot notify-test`, then `tradebot validate` on real history and report
+   with the backtest-gate skill.
 3. Do one supervised `tradebot cycle`; fix anything the real Alpaca/news APIs reveal; then scripts/run_local.sh.
-4. Ask me the remaining items in docs/OPEN_QUESTIONS.md (alerts channel first).
+4. Ask me the remaining items in docs/OPEN_QUESTIONS.md.
 5. Weekly: run the weekly-review skill and propose changes as PRs.
 ```

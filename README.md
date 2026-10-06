@@ -11,11 +11,13 @@ journaled with its full reasoning, and every result feeds back into the system.
 ```bash
 bash scripts/setup_local.sh        # venv, install, tests (Windows: scripts\setup_local.ps1)
 source .venv/bin/activate
-python3 -m pytest -q                                   # 36 offline tests
+python3 -m pytest -q                                   # offline tests (no network, no AI spend)
 tradebot --mode simulated --offline validate           # backtest gate on synthetic data
 tradebot --mode simulated --offline cycle              # one dry-run cycle, no API calls
 
-cp .env.example .env    # add ANTHROPIC_API_KEY, ALPACA_API_KEY, ALPACA_SECRET_KEY (paper keys)
+claude                  # once: log in with your Claude subscription (the AI agents use it, no API key)
+cp .env.example .env    # add ALPACA_API_KEY, ALPACA_SECRET_KEY (paper), DISCORD_WEBHOOK_URL
+tradebot llm-check && tradebot notify-test
 tradebot validate       # backtest gate on real Alpaca history
 bash scripts/run_local.sh   # paper trading loop with logs in data/tradebot.log
 tradebot report         # P&L, validated setups, promotion verdict, LLM spend

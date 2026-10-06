@@ -11,6 +11,8 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=%h/Claude-trading
+# services don't read your shell profile: make sure the `claude` CLI is on PATH
+Environment=PATH=%h/.local/bin:%h/.claude/local:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/Claude-trading/.venv/bin/tradebot --log-file data/tradebot.log run
 Restart=on-failure
 RestartSec=30

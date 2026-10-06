@@ -105,7 +105,12 @@ class ModelConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    daily_budget_usd: float = 15.0
+    backend: Literal["claude_cli", "api"] = "claude_cli"
+    claude_cli_path: str = "claude"
+    cli_timeout_seconds: int = 180
+    cli_opus_fallback_model: str = "claude-sonnet-5-5"
+    monthly_budget_usd: Optional[float] = 18.0
+    daily_budget_usd: float = 0.6
     prefilter_min_abs_score: float = 0.15
     market_data_review: bool = True     # one cheap call per cycle; a fixed daily cost
     orchestrator: ModelConfig = ModelConfig(model="claude-opus-5-5", effort="high", max_tokens=16000)

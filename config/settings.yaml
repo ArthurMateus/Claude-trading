@@ -79,11 +79,18 @@ promotion:                   # Paper-Trading gate before any live capital
   max_slippage_vs_model_bps: 10
 
 llm:
-  daily_budget_usd: 2.0      # spend above this => LLM calls stop, agents abstain, no new entries.
-                             # $2/day = ~$60/month = 12% of a $500 account; raise only when results justify it.
+  backend: claude_cli        # claude_cli = your logged-in Claude subscription via `claude -p` (no API key, no
+                             # per-token bill). Pro includes a $20/month credit for this; when it's used up calls
+                             # simply stop (keep "usage credits" OFF in claude.ai Settings > Usage).
+                             # api = Anthropic API key, pay per token.
+  claude_cli_path: claude    # full path if `claude` isn't on PATH (Windows: ...\claude.exe)
+  cli_timeout_seconds: 180
+  cli_opus_fallback_model: claude-sonnet-5-5   # used automatically if your plan can't run Opus
+  monthly_budget_usd: 18.0   # stay under Pro's $20/month credit (leaves room for your own `claude -p` use)
+  daily_budget_usd: 0.60     # ~$18 / 30 days. Over budget => agents abstain, no new entries, stops stay live.
   prefilter_min_abs_score: 0.15  # Opus is only consulted when the cheap agents agree at least this much
-  market_data_review: false  # per-cycle Haiku data/regime review (~$1.7/day fixed); off for the $500 account
-  orchestrator: {model: claude-opus-5-5, effort: high, max_tokens: 16000}
+  market_data_review: false  # per-cycle Haiku data/regime review (fixed daily cost); off on the free plan
+  orchestrator: {model: claude-opus-5-5, effort: medium, max_tokens: 16000}   # medium to stretch the credit
   agents:                    # Option 3: Opus orchestrates, cheaper models run every sub-agent
     market_data: {model: claude-haiku-4-5, max_tokens: 2000}
     news:        {model: claude-haiku-4-5, max_tokens: 2000}

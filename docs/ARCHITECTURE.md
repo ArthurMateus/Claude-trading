@@ -80,6 +80,9 @@
 
 \* per-cycle reviews are disabled in the $500 profile (fixed daily cost); deterministic checks still run.
 
-Opus 5.5 and Sonnet 5.5 calls send `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`), so a
-safety-classifier refusal is retried server-side on a fallback model instead of failing the call.
-All calls use JSON-schema structured outputs and prompt caching on the system prompt.
+**Backends:** `claude_cli` (default) runs each call as `claude -p` under the user's Claude subscription:
+no tools, safe mode, JSON-schema structured output, payload on stdin, `ANTHROPIC_API_KEY` stripped from the env,
+Opus falling back to Sonnet if the plan lacks it. `api` uses the Anthropic SDK with structured outputs, prompt
+caching and `fallbacks: "default"` on Opus/Sonnet 5.5. Both record cost and enforce daily and monthly budgets.
+
+**Alerts:** `notify.py` posts to a Discord webhook (opens, closes, kill-switch changes, daily summary, budget, errors).

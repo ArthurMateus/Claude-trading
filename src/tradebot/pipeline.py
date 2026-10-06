@@ -39,6 +39,7 @@ from .guardrails import PortfolioState
 from .journal import Journal, start_of_utc_day
 from .learning import update_agent_weights
 from .llm import LLMClient
+from .notify import Notifier
 from .strategies import setup_context
 
 log = logging.getLogger(__name__)
@@ -60,8 +61,9 @@ class CycleReport:
 
 class Pipeline:
     def __init__(self, settings: Settings, provider: MarketDataProvider, broker: Broker, journal: Journal,
-                 llm: LLMClient):
+                 llm: LLMClient, notifier: Notifier | None = None):
         self.s, self.provider, self.broker, self.journal, self.llm = settings, provider, broker, journal, llm
+        self.notify = notifier or Notifier(journal, webhook_url="", mode=settings.mode)
         ctx = AgentContext(settings, llm, journal)
         self.market = MarketDataAgent(ctx, provider)
         self.signal_agents = [TechnicalAgent(ctx), QuantAgent(ctx), NewsAgent(ctx), FlowAgent(ctx),
@@ -142,10 +144,27 @@ class Pipeline:
     def _after_close(self, closed, report: CycleReport) -> None:
         report.closed.append(f"{closed.asset}:{closed.result}:{closed.exit_reason}")
         try:
-            self.post_trade.analyze(closed)
+            closed = self.post_trade.analyze(closed)
             update_agent_weights(self.journal, self.s)
         except Exception:
             log.exception("post-trade failed for %s", closed.trade_id)
+        self.notify.trade_closed(closed)
+
+    def maybe_daily_summary(self, pstate: PortfolioState) -> None:
+        """Once per UTC day, summarize the previous day (P&L, trades, equity, AI credit used)."""
+        today = start_of_utc_day()
+        last = self.journal.get_state("last_summary_day")
+        if last == today.date().isoformat():
+            return
+        self.journal.set_state("last_summary_day", today.date().isoformat())
+        if last is None:        # first run ever: nothing to summarize yet
+            return
+        y_start = today - timedelta(days=1)
+        closed = [t for t in self.journal.closed_trades(limit=500) if t.closed_at and y_start <= t.closed_at < today]
+        llm_day = self.journal.llm_spend_since(y_start) - self.journal.llm_spend_since(today)
+        self.notify.daily_summary(y_start.date().isoformat(), closed, pstate.equity,
+                                  self.journal.equity_at_or_after(y_start), llm_day, self.llm.spend_this_month(),
+                                  self.s.llm.monthly_budget_usd, len(pstate.open_trades))
 
     # ------------------------------------------------------------ stages
     def manage_positions(self, snap: MarketSnapshot, report: CycleReport) -> None:
@@ -189,8 +208,15 @@ class Pipeline:
         self.manage_positions(snap, report)
 
         pstate = self.portfolio_state()
+        self.maybe_daily_summary(pstate)
         ks = self.kill.evaluate(pstate, snap)
         report.kill_switch, report.kill_reasons = ks.level, ks.reasons
+        prev_level = self.journal.get_state("kill_switch_level", "OK")
+        if ks.level != prev_level:
+            self.notify.kill_switch_changed(prev_level, ks)
+            self.journal.set_state("kill_switch_level", ks.level)
+        if self.llm.online and self.llm.budget_exhausted():
+            self.notify.budget_exhausted(self.llm.spend_today(), self.llm.spend_this_month())
         if ks.flatten:
             self.flatten_all(snap, ks.reasons[0] if ks.reasons else "halt", report)
             pstate = self.portfolio_state()
@@ -246,11 +272,20 @@ class Pipeline:
             rec = self.execution.enter(plan, st, fresh.equity)
             if rec:
                 report.opened.append(f"{rec.asset} {rec.position_size:.6f} @ {rec.entry:.4f}")
+                self.notify.trade_opened(rec)
         if self.s.mode == "paper":
-            self.paper.evaluate()
+            prev = (self.journal.get_state("promotion") or {}).get("verdict")
+            verdict = self.paper.evaluate()
+            if prev and verdict.get("verdict") != prev:
+                self.notify.promotion_changed(verdict)
         return report
 
     def run_forever(self) -> None:
+        try:
+            self.notify.startup(self.portfolio_state().equity, list(self.backtester.validated_setups()),
+                                self.llm.backend)
+        except Exception:
+            log.exception("startup notification failed")
         while True:
             started = time.time()
             try:
@@ -260,4 +295,5 @@ class Pipeline:
             except Exception as e:
                 log.exception("cycle failed")
                 self.journal.log_event("api_error", f"cycle failed: {e}", "ERROR")
+                self.notify.cycle_error(f"{type(e).__name__}: {e}")
             time.sleep(max(5.0, self.s.cycle_interval_seconds - (time.time() - started)))

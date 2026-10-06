@@ -1,11 +1,17 @@
 """Thin Claude wrapper used by every agent.
 
+Backends (config `llm.backend`):
+- `claude_cli` (default): runs `claude -p` (Claude Code headless) logged in with YOUR Claude subscription.
+  No API key, no pay-per-token billing: usage draws from the plan's monthly Agent SDK credit ($20 on Pro).
+  When that credit is spent, calls fail (unless you enabled "usage credits" in claude.ai Settings > Usage),
+  the agents abstain and the bot stops opening trades until the credit refreshes.
+- `api`: the Anthropic API with ANTHROPIC_API_KEY (pay per token).
+- `--offline`: no model calls at all; agents use deterministic heuristics (tests and dry runs).
+
+Common behavior:
 - one model per agent role (config `llm.agents`), Opus 5.5 for the orchestrator
-- structured outputs: every call returns a validated pydantic object or None
-- refusal fallback (`fallbacks: "default"`) on models that support it
-- token cost is recorded to the journal; past the daily budget every call returns None
-- offline mode (no ANTHROPIC_API_KEY or mode=simulated with --offline): `online` is False and agents
-  use their deterministic heuristics instead
+- structured outputs: every call returns a validated pydantic object or None (caller abstains)
+- cost of every call is recorded to the journal; past the daily or monthly budget every call returns None
 """
 from __future__ import annotations
 
@@ -13,7 +19,10 @@ import copy
 import json
 import logging
 import os
-from typing import Optional, Type, TypeVar
+import shutil
+import subprocess
+import tempfile
+from typing import Callable, Optional, Type, TypeVar
 
 from pydantic import BaseModel
 
@@ -54,26 +63,90 @@ def strict_schema(model: Type[BaseModel]) -> dict:
     return fix(copy.deepcopy(model.model_json_schema()))
 
 
+# Env vars that would make Claude Code bill an API key instead of the logged-in subscription.
+_API_BILLING_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+Runner = Callable[..., subprocess.CompletedProcess]
+
+
 class LLMClient:
-    def __init__(self, cfg: LLMConfig, journal=None, offline: bool = False):
+    def __init__(self, cfg: LLMConfig, journal=None, offline: bool = False, run: Runner = subprocess.run):
         self.cfg = cfg
         self.journal = journal
-        self.online = not offline and bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+        self.backend = "offline" if offline else cfg.backend
         self._client = None
-        if self.online:
+        self._cli: Optional[str] = None
+        self._run = run
+        if self.backend == "claude_cli":
+            self._cli = shutil.which(cfg.claude_cli_path) or (cfg.claude_cli_path if os.path.isfile(cfg.claude_cli_path) else None)
+            self._cwd = tempfile.mkdtemp(prefix="tradebot-cli-")   # empty dir: no project files leak into prompts
+        elif self.backend == "api" and (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
             import anthropic
             self._client = anthropic.Anthropic()
+        self.online = self._cli is not None or self._client is not None
+
+    # ------------------------------------------------------------ budget
+    def spend_today(self) -> float:
+        return self.journal.llm_spend_today() if self.journal else 0.0
+
+    def spend_this_month(self) -> float:
+        if not self.journal:
+            return 0.0
+        from .journal import start_of_utc_day
+        return self.journal.llm_spend_since(start_of_utc_day().replace(day=1))
 
     def budget_exhausted(self) -> bool:
-        return bool(self.journal) and self.journal.llm_spend_today() >= self.cfg.daily_budget_usd
+        if not self.journal:
+            return False
+        return (self.spend_today() >= self.cfg.daily_budget_usd
+                or (self.cfg.monthly_budget_usd is not None and self.spend_this_month() >= self.cfg.monthly_budget_usd))
 
+    # ------------------------------------------------------------ calls
     def structured(self, role: str, system: str, payload: dict, schema: Type[T]) -> Optional[T]:
         """Ask the role's model for a `schema` object. Returns None on any failure (caller abstains)."""
-        if not self.online or self._client is None:
+        if not self.online:
             return None
         if self.budget_exhausted():
-            log.warning("LLM daily budget exhausted; %s abstains", role)
+            log.warning("LLM budget exhausted; %s abstains", role)
             return None
+        if self._cli:
+            return self._structured_cli(role, system, payload, schema)
+        return self._structured_api(role, system, payload, schema)
+
+    def _structured_cli(self, role: str, system: str, payload: dict, schema: Type[T]) -> Optional[T]:
+        mc = self.cfg.for_role(role)
+        cmd = [self._cli, "-p", "--output-format", "json", "--model", mc.model,
+               "--safe-mode", "--tools", "", "--no-session-persistence",
+               "--system-prompt", system, "--json-schema", json.dumps(strict_schema(schema))]
+        if mc.effort and mc.model in _EFFORT_MODELS:
+            cmd += ["--effort", mc.effort]
+        if mc.model.startswith("claude-opus"):
+            cmd += ["--fallback-model", self.cfg.cli_opus_fallback_model]   # plans without Opus fall back
+        env = {k: v for k, v in os.environ.items() if k not in _API_BILLING_ENV}
+        try:
+            proc = self._run(cmd, input=json.dumps(payload, default=str, indent=1), capture_output=True, text=True,
+                             timeout=self.cfg.cli_timeout_seconds, env=env, cwd=self._cwd)
+            data = json.loads(proc.stdout) if proc.stdout.strip() else {}
+        except Exception as e:
+            return self._fail(role, mc.model, f"{type(e).__name__}: {e}")
+        if data.get("total_cost_usd") is not None:
+            u = data.get("usage") or {}
+            self._record(role, mc.model, {"input": u.get("input_tokens", 0), "output": u.get("output_tokens", 0),
+                                          "cache_read": u.get("cache_read_input_tokens", 0),
+                                          "cache_write": u.get("cache_creation_input_tokens", 0)},
+                         float(data["total_cost_usd"]))
+        if proc.returncode != 0 or data.get("is_error") or data.get("subtype") != "success":
+            detail = data.get("result") or proc.stderr or f"exit {proc.returncode}"
+            return self._fail(role, mc.model, str(detail)[:300])
+        out = data.get("structured_output")
+        if out is None:
+            return self._fail(role, mc.model, "no structured_output in CLI response")
+        try:
+            return schema.model_validate(out)
+        except Exception as e:
+            return self._fail(role, mc.model, f"invalid {schema.__name__}: {e}")
+
+    def _structured_api(self, role: str, system: str, payload: dict, schema: Type[T]) -> Optional[T]:
         mc = self.cfg.for_role(role)
         output_config: dict = {"format": {"type": "json_schema", "schema": strict_schema(schema)}}
         if mc.effort and mc.model in _EFFORT_MODELS:
@@ -92,11 +165,8 @@ class LLMClient:
             else:
                 resp = self._client.messages.create(**kwargs)
         except Exception as e:  # network, rate limit, 5xx, bad request: abstain, never guess
-            log.error("LLM call failed for %s (%s): %s", role, mc.model, e)
-            if self.journal:
-                self.journal.log_event("llm_error", f"{role}: {type(e).__name__}", "WARN", {"error": str(e)[:500]})
-            return None
-        self._record_usage(role, mc.model, resp)
+            return self._fail(role, mc.model, f"{type(e).__name__}: {e}")
+        self._record_api_usage(role, mc.model, resp)
         if resp.stop_reason in ("refusal", "max_tokens"):
             log.warning("LLM %s stopped with %s", role, resp.stop_reason)
             return None
@@ -109,7 +179,17 @@ class LLMClient:
             log.error("LLM %s returned invalid %s: %s", role, schema.__name__, e)
             return None
 
-    def _record_usage(self, role: str, model: str, resp) -> None:
+    def _fail(self, role: str, model: str, error: str) -> None:
+        log.error("LLM call failed for %s (%s): %s", role, model, error)
+        if self.journal:
+            self.journal.log_event("llm_error", f"{role}: {error[:120]}", "WARN", {"model": model, "error": error})
+        return None
+
+    def _record(self, role: str, model: str, usage: dict[str, int], cost: float) -> None:
+        if self.journal:
+            self.journal.record_llm_usage(role, model, usage, cost)
+
+    def _record_api_usage(self, role: str, model: str, resp) -> None:
         u = resp.usage
         usage = {
             "input": getattr(u, "input_tokens", 0) or 0,
@@ -120,5 +200,4 @@ class LLMClient:
         p_in, p_out = PRICES.get(model, (4.0, 20.0))
         cost = (usage["input"] * p_in + usage["output"] * p_out
                 + usage["cache_read"] * p_in * 0.1 + usage["cache_write"] * p_in * 1.25) / 1e6
-        if self.journal:
-            self.journal.record_llm_usage(role, model, usage, cost)
+        self._record(role, model, usage, cost)

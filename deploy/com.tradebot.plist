@@ -15,6 +15,11 @@
     <string>--log-file</string><string>data/tradebot.log</string>
     <string>run</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd doesn't read your shell profile: make sure the `claude` CLI is on PATH -->
+    <key>PATH</key><string>/Users/YOU/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ThrottleInterval</key><integer>30</integer>

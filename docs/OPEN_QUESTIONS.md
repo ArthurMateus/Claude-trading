@@ -4,11 +4,11 @@ Answer any of these by editing this file or telling Claude. The *default* is wha
 
 ## Still open
 
-1. **Alerts:** where should HALTs, daily summaries and promotion verdicts go (Telegram, Discord/Slack webhook,
-   email, desktop notification)? *Default:* `data/tradebot.log` + `tradebot report` only.
-2. **LLM budget vs a $500 account:** $2/day ≈ $60/month ≈ 12% of the account. Keep it, lower it, or run
-   heuristic-only (`--offline`, $0) for part of the paper period to measure whether the LLM layer earns its cost?
-   *Default:* $2/day.
+1. **Credit stretch:** the $20/month Pro credit buys roughly 5–8 fully analyzed trade decisions a day. If
+   it runs out mid-month, should the bot switch to heuristic-only (`--offline`) until it refreshes, or simply
+   pause entries (current)? *Default:* pause.
+2. **Upgrade path:** if paper results justify it, move to Max ($100/month credit) or the paid API for more
+   headroom? *Default:* no.
 3. **Max open positions "5–8"**: with $500 and a 30% per-position cap, at most ~3 positions fit at once anyway.
    *Default:* cap 8, cash limits it naturally.
 4. **Heat cap coupled to the daily loss limit** (effective cap 5% while the daily limit is 5%)? *Default:* yes.
@@ -35,9 +35,11 @@ Answer any of these by editing this file or telling Claude. The *default* is wha
 | 2026-10-06 | Portfolio heat | 6% total open risk; correlated assets = one cluster |
 | 2026-10-06 | LLM architecture | Option 3: Opus 5.5 orchestrator, Haiku/Sonnet sub-agents; hard limits in code |
 | 2026-10-06 | Stack | Python + SQLite |
-| 2026-10-06 | Account size | **$500** for paper (`allocated_capital_usd: 500`); LLM budget lowered to $2/day; per-cycle LLM reviews off |
+| 2026-10-06 | Account size | **$500** for paper (`allocated_capital_usd: 500`); per-cycle LLM reviews off |
 | 2026-10-06 | Setups | No personal setups; use a diverse library (8 setups); each must pass the backtest gate |
 | 2026-10-06 | News | Free: Alpaca/Benzinga, RSS (CoinDesk, Cointelegraph, Decrypt), Reddit. Opt-in X (capped 100 posts/day) and CryptoPanic |
 | 2026-10-06 | Replication | Follow the system's own hot agents + setup momentum; external traders only after they earn trust |
 | 2026-10-06 | Fundamental | Stays disabled for now |
 | 2026-10-06 | Hosting | User's local machine (scripts + systemd/launchd/Task Scheduler templates) |
+| 2026-10-06 | AI cost | **Free beyond the Pro subscription:** `claude -p` backend on the user's Claude login, $18/month + $0.60/day caps, no API key, X/CryptoPanic off |
+| 2026-10-06 | Alerts | Discord webhook (`DISCORD_WEBHOOK_URL`) |

@@ -46,11 +46,12 @@ know whether you have an edge. Nobody can promise one.
    placed at the broker the moment an entry fills, so the stop survives a crash of the bot. Take-profit and
    time-stop exits are managed every cycle.
 7. **LLM cost can exceed the profit, especially on a $500 account.** Calling every agent on every asset every
-   5 minutes costs about $50/day. → The intelligence layer and Opus only run when a **validated setup fires**,
-   per-cycle reviews are off, and the daily budget is **$2** (X/Twitter reads count against it too). Even so,
-   $60/month is 12% of $500, so the LLM layer cannot pay for itself at this size. Treat the paper period as a
-   paid experiment: the question is whether the LLM layer improves results over the free heuristics
-   (`--offline`). Scale capital only if it clearly does.
+   5 minutes costs about $50/day at API prices. → The bot runs the models through the **Claude Pro
+   subscription** (`claude -p`), whose $20/month credit covers it at no extra cost. The intelligence layer and
+   Opus only run when a **validated setup fires**, per-cycle reviews are off, and the bot caps itself at
+   $18/month and $0.60/day. That buys roughly 5–8 fully analyzed decisions a day, enough for a $500 account
+   that holds at most ~3 positions. When the credit runs out the bot pauses entries; open positions keep their
+   broker stops. The paper period still has to show the AI layer beats the free heuristics (`--offline`).
 8. **Prompt injection via news.** Headlines are untrusted text. → Prompts treat third-party text as data, and
    no LLM output can raise risk above the hard limits.
 9. **Agents with little value for crypto intraday.** Fundamental (no data source, and fundamentals rarely move
