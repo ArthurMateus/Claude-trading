@@ -184,7 +184,7 @@ class Journal:
 
     def export_csv(self, path: str | Path) -> int:
         rows = self._all("SELECT * FROM trades ORDER BY timestamp")
-        with open(path, "w", newline="") as f:
+        with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             if rows:
                 w.writerow(rows[0].keys())

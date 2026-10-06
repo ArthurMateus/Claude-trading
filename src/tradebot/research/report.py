@@ -111,7 +111,7 @@ def _read(path: Path, **kw) -> pd.DataFrame:
 
 
 def write(out_dir: Path = RESULTS) -> Path:
-    meta = json.loads((out_dir / "meta.json").read_text())
+    meta = json.loads((out_dir / "meta.json").read_text(encoding="utf-8"))
     strategies = _read(out_dir / "strategies.csv")
     grid = _read(out_dir / "portfolio_grid.csv")
     curves = _read(out_dir / "equity_curves.csv", index_col=0, parse_dates=True)
@@ -213,5 +213,5 @@ def write(out_dir: Path = RESULTS) -> Path:
                   "reference portfolio has members. Per-strategy returns at each risk level are in the tables "
                   "above._", ""]
     path = out_dir / "REPORT.md"
-    path.write_text("\n".join(lines))
+    path.write_text("\n".join(lines), encoding="utf-8")
     return path

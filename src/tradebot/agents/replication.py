@@ -106,7 +106,7 @@ class ReplicationAgent(SignalAgent):
         if not path.exists():
             return []
         try:
-            rows = json.loads(path.read_text())
+            rows = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return []
         out = []

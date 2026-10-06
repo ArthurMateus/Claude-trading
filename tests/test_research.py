@@ -348,10 +348,10 @@ def test_report_handles_a_run_where_no_portfolio_qualified(tmp_path):
             "assets": ["BTC/USD"], "start_equity": 500.0, "configs_searched": 1152, "prior_2026_runs": 0,
             "test_files_cached_before_freeze": [], "headline_spec": search.HEADLINE, "beats_null": 0,
             "beats_null_expected_by_chance": 0.1, "headline": None}
-    (tmp_path / "meta.json").write_text(json.dumps(meta))
+    (tmp_path / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     pd.DataFrame([{"cost_model": "perp", "family": "ema_cross", "side": "long", "tf": 60, "validated": False,
                    "test_trades": 50, "test_pf": 0.8, "ret_r1_x3": -4.0}]).to_csv(tmp_path / "strategies.csv", index=False)
     pd.DataFrame().to_csv(tmp_path / "portfolio_grid.csv", index=False)
     pd.DataFrame().to_csv(tmp_path / "equity_curves.csv")
-    text = report.write(tmp_path).read_text()
+    text = report.write(tmp_path).read_text(encoding="utf-8")
     assert "No result" in text and "no champion passed the in-sample gate" in text
