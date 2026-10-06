@@ -102,14 +102,19 @@ def _chart_heatmap(grid: pd.DataFrame, path: Path, title: str) -> bool:
     return True
 
 
+def _read(path: Path, **kw) -> pd.DataFrame:
+    """CSV or an empty frame (a run where no portfolio qualified writes an empty file)."""
+    try:
+        return pd.read_csv(path, **kw)
+    except (FileNotFoundError, pd.errors.EmptyDataError):
+        return pd.DataFrame()
+
+
 def write(out_dir: Path = RESULTS) -> Path:
     meta = json.loads((out_dir / "meta.json").read_text())
-    strategies = pd.read_csv(out_dir / "strategies.csv")
-    grid = pd.read_csv(out_dir / "portfolio_grid.csv") if (out_dir / "portfolio_grid.csv").stat().st_size > 1 else pd.DataFrame()
-    try:
-        curves = pd.read_csv(out_dir / "equity_curves.csv", index_col=0, parse_dates=True)
-    except Exception:
-        curves = pd.DataFrame()
+    strategies = _read(out_dir / "strategies.csv")
+    grid = _read(out_dir / "portfolio_grid.csv")
+    curves = _read(out_dir / "equity_curves.csv", index_col=0, parse_dates=True)
     hs, hl = meta["headline_spec"], meta.get("headline")
     integrity = []
     if meta.get("contaminated"):
@@ -203,7 +208,10 @@ def write(out_dir: Path = RESULTS) -> Path:
                     lines += ["Ruined (equity < 1% of start): " + ", ".join(
                         f"{r.risk_pct}% @ {r.leverage}x" for r in ruined.itertuples()), ""]
     else:
-        lines += ["## Combined portfolios", "", "_No strategy produced test trades._", ""]
+        lines += ["## Combined portfolios", "",
+                  "_None: no champion passed the in-sample gate (2022–2024), so neither the validated nor the "
+                  "reference portfolio has members. Per-strategy returns at each risk level are in the tables "
+                  "above._", ""]
     path = out_dir / "REPORT.md"
     path.write_text("\n".join(lines))
     return path

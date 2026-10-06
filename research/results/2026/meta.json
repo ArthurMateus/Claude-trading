@@ -1,0 +1,32 @@
+{
+ "frozen_sha256": "54a2e513f881ea9181997840927a3b5abd456cddd506a59eae57e67c23fddb32",
+ "frozen_created_at": "2026-10-06T13:24:31.561952+00:00",
+ "source_sha256": "1c288a7ed1ae357e7901d8d290f0490c75e56f067b2c14b39cc0163042c77dbe",
+ "contaminated": false,
+ "test_start": "2026-01-01",
+ "test_end": "2026-10-06",
+ "test_days": 278,
+ "assets": [
+  "AVAX/USD",
+  "BTC/USD",
+  "DOGE/USD",
+  "ETH/USD",
+  "LINK/USD",
+  "LTC/USD",
+  "SOL/USD"
+ ],
+ "start_equity": 500.0,
+ "configs_searched": 1152,
+ "prior_2026_runs": 0,
+ "test_files_cached_before_freeze": [],
+ "headline_spec": {
+  "cost_model": "alpaca_spot",
+  "portfolio": "validated",
+  "risk_pct": 1,
+  "leverage": 1,
+  "guardrails": true
+ },
+ "beats_null": 5,
+ "beats_null_expected_by_chance": 1.8,
+ "headline": null
+}

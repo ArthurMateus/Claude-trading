@@ -11,6 +11,7 @@
   tradebot research download     Binance 5m history 2022-2025 (no 2026 data) into data/history/
   tradebot research search       design on 2022-2024, select on 2025, freeze research/frozen.json
   tradebot research test2026     one-shot out-of-sample test of the frozen strategies on 2026
+  tradebot research report       rebuild REPORT.md from the saved 2026 results (does not re-run the test)
   tradebot research status       cached history and frozen state
 Global flags: --config PATH, --offline (no LLM calls; deterministic heuristics), --mode simulated|paper|live
 """
@@ -118,6 +119,9 @@ def cmd_research(args) -> None:
             print(f"{'VALID' if c['validated'] else '     '} {c['cost_model']:11} {c['id']:80} "
                   f"train PF {c['train']['profit_factor']:.2f} val PF {c['validation']['profit_factor']:.2f}")
         print(f"frozen -> {search.FROZEN_PATH} ({body['frozen_sha256'][:12]})")
+    elif args.action == "report":
+        from .research import report
+        print(f"report: {report.write()}")
     elif args.action == "test2026":
         frozen = search.load_frozen()
         peeked = history.test_files_cached_before(datetime.fromisoformat(frozen["created_at"]), frozen["assets"])
@@ -147,7 +151,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("llm-check")
     sub.add_parser("notify-test")
     rs = sub.add_parser("research")
-    rs.add_argument("action", choices=["download", "search", "test2026", "status"])
+    rs.add_argument("action", choices=["download", "search", "test2026", "report", "status"])
     rs.add_argument("--refreeze", action="store_true", help="discard research/frozen.json and search again")
     rs.add_argument("--contaminated", action="store_true",
                     help="allow a new search after 2026 was already viewed (stamped into the report)")
