@@ -56,3 +56,31 @@ halt would have stopped it early.
   promising change, but it departs from the "couple of hours or less" goal.
 - **Cut costs:** maker-only (limit) entries on Alpaca, or a low-fee futures venue (needs a new broker adapter).
 - **squeeze_breakout long (1h)** as a forward paper-test candidate only, with small size, judged on new data.
+
+---
+
+# Research v2 (run 2026-10-06 18:55 UTC): holds ≤ 24h, long + short, cross-asset and funding families
+
+Freeze `e033f5db…` (contaminated: 2026 had been viewed twice before; ledger entry 3). 1,720 configurations,
+17 families, 15m/1h/4h, exits with 8h/24h holds, real Binance funding costs, 51 champions. Raw output replaced
+v1's in `research/results/2026/` (v1 numbers above remain the record of run 1).
+
+**Headline: still no trade.** None of the 51 champions passed 2025 validation. The best 2025 t-stat was 1.35,
+so even v1's weaker bar (t ≥ 2) would have passed none. Strategies that looked good on 2022–2024 did not hold
+up on 2025.
+
+- **Timing null:** 2 of 51 beat it, 2.6 expected by pure chance. Both have fewer than 20 trades (btc_lead long
+  on spot with 14, btc_lead short on perp with 18), so they are noise.
+- **Alpaca spot:** 15 of 17 long strategies lost in 2026 (−44 to −187 bps per trade). Random entries with the
+  same exits lose about −75 bps. Longer holds did not overcome the 0.6–0.8% round-trip cost.
+- **Perp (reference portfolio of the 16 champions with an in-sample edge, all rejected by 2025):** −23% at 1%
+  risk 1x; −64% at 2x; −92% to −99% at 5x and above. With circuit breakers every cell stops near −15% (the
+  drawdown halt), mostly within the first weeks. Leverage magnified a negative edge.
+- **Jan–Jun vs Jul–now:** many long strategies were negative in H1 and positive in H2, with shorts the reverse.
+  The null shows the same split, so this is market direction, not skill.
+
+## What this means
+
+Across 2,872 configurations in two independent searches (v1 intraday, v2 ≤ 24h), nothing that is both
+statistically defensible on 2025 and positive on 2026 exists among these rule families on these 7 coins.
+Further searches on 2026 are now pure curve-fitting; forward paper trading is the only honest test left.
