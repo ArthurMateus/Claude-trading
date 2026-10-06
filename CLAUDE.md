@@ -112,12 +112,10 @@ Also: `decisions` (every candidate + rejection reason), `events`, `equity`, `llm
 - Keep comments sparse and purposeful; match surrounding style; add tests with every behavior change.
 
 ## Current status (2026-10-06)
-- v0.3: all 15 agents, 8-setup library, multi-source news, replication of internal agents/setups with an
-  earned-trust gate for external sources, $500 virtual sub-account, Claude-subscription AI backend, Discord
-  alerts, local deployment scripts. 52 offline tests green. The CLI backend was verified with real `claude -p` calls.
-- Not yet verified: the Alpaca adapter, live news feeds and the Discord webhook against the real services (the
-  build sandbox blocked those hosts). The user's first supervised run is that test.
-- Open: derivatives flow data, event-risk policy, paper-gate thresholds (see `docs/OPEN_QUESTIONS.md`).
-- Next steps: user runs `scripts/setup_local.sh`, logs in to `claude`, fills `.env`, runs `tradebot llm-check`,
-  `tradebot notify-test`, `tradebot validate` and one supervised `tradebot cycle`; fix whatever the real APIs
-  reveal; then `scripts/run_local.sh` for the paper period.
+- v0.3 bot complete (15 agents, Claude-subscription AI backend, Discord alerts, local deployment); 80 offline tests.
+- **2026 out-of-sample research run done** (`docs/BACKTEST_2026_FINDINGS.md`, `research/results/2026/`): none of
+  the 12 intraday strategy families has an edge after costs. On Alpaca spot every strategy loses (round-trip fees
+  0.6–0.8% exceed 1–4h moves); with perp fees the best are statistically insignificant. The pre-registered
+  headline was "no trade". 2026 is now viewed: new searches need `--contaminated`; judge them on forward paper.
+- Next options (ask the user): longer holds (daily bars), lower costs (maker-only entries or a futures venue),
+  forward paper test of squeeze_breakout long 1h. Keep paper only; no live, no risk/leverage increases.
