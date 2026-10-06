@@ -109,8 +109,13 @@ class LLMConfig(BaseModel):
     claude_cli_path: str = "claude"
     cli_timeout_seconds: int = 180
     cli_opus_fallback_model: str = "claude-sonnet-5-5"
-    monthly_budget_usd: Optional[float] = 18.0
-    daily_budget_usd: float = 0.6
+    monthly_budget_usd: Optional[float] = 19.5
+    credit_reset_day: int = 1            # day of month your Claude subscription renews (credit refresh)
+    pacing: bool = True                  # spread the monthly budget evenly over the period, unused carries forward
+    pacing_burst_usd: float = 1.0        # how far ahead of the even pace the bot may spend (busy moments)
+    daily_budget_usd: float = 3.0        # safety ceiling against runaway loops, not the normal limiter
+    prescreen_min_score: Optional[float] = 0.05   # free heuristic vote needed before spending AI tokens
+    reanalyze_cooldown_minutes: int = 30          # don't re-analyze the same asset + setups sooner than this
     prefilter_min_abs_score: float = 0.15
     market_data_review: bool = True     # one cheap call per cycle; a fixed daily cost
     orchestrator: ModelConfig = ModelConfig(model="claude-opus-5-5", effort="high", max_tokens=16000)

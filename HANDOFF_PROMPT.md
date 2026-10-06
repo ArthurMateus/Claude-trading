@@ -35,7 +35,9 @@ DECISIONS I ALREADY MADE (don't re-ask)
 - Holding period: minutes to max 4 hours. Spot, long-only (Alpaca crypto can't short).
 - Account: $500 for paper (allocated_capital_usd: 500). Per-cycle LLM reviews off.
 - NO PAID API: the AI agents run through my Claude Pro subscription via `claude -p` (llm.backend: claude_cli).
-  Pro includes a $20/month credit for that; the bot caps itself at $18/month and $0.60/day and strips
+  Pro includes a $20/month credit for that (my weekly Claude limits don't apply to claude -p). The bot paces
+  $19.50 per billing month evenly 24/7 with carry-over, uses a free heuristic pre-screen and a 30-min
+  re-analysis cooldown to stretch it, and strips
   ANTHROPIC_API_KEY from the CLI env. I keep "usage credits" off in claude.ai, so running out just pauses calls.
   Do not switch me to the paid API or enable X/CryptoPanic without asking.
 - Alerts go to Discord via DISCORD_WEBHOOK_URL (notify.py).
@@ -59,7 +61,7 @@ RULES FOR YOU
 - Ask me before deciding anything listed in docs/OPEN_QUESTIONS.md.
 
 CURRENT STATUS
-- v0.3 complete and tested offline (45 tests); the claude -p backend was verified with real calls. NOT yet
+- v0.3 complete and tested offline (52 tests); the claude -p backend was verified with real calls. NOT yet
   verified against real services: the Alpaca adapter, live news feeds and the Discord webhook (the build sandbox
   blocked those hosts). Not built: derivatives flow data.
 - On random-walk data every setup fails the backtest gate once fees are included (as it should). Real

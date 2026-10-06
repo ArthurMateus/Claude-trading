@@ -22,6 +22,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional, Type, TypeVar
 
 from pydantic import BaseModel
@@ -86,20 +87,54 @@ class LLMClient:
         self.online = self._cli is not None or self._client is not None
 
     # ------------------------------------------------------------ budget
+    # The monthly credit is spread over the whole billing period: the allowance grows continuously and
+    # unused allowance carries forward, so quiet hours bank credit for busy ones and the bot keeps AI
+    # coverage around the clock instead of burning a daily cap by mid-morning.
+
+    def billing_period(self, now: Optional[datetime] = None) -> tuple[datetime, datetime]:
+        now = now or datetime.now(timezone.utc)
+        day = max(1, min(28, self.cfg.credit_reset_day))
+        start = now.replace(day=day, hour=0, minute=0, second=0, microsecond=0)
+        if start > now:
+            start = (start.replace(day=1) - timedelta(days=1)).replace(day=day)
+        end = (start.replace(day=28) + timedelta(days=4)).replace(day=day)
+        return start, end
+
     def spend_today(self) -> float:
         return self.journal.llm_spend_today() if self.journal else 0.0
 
     def spend_this_month(self) -> float:
+        """Spend in the current credit billing period (starts on `credit_reset_day`)."""
+        return self.journal.llm_spend_since(self.billing_period()[0]) if self.journal else 0.0
+
+    def paced_allowance(self, now: Optional[datetime] = None) -> float:
+        now = now or datetime.now(timezone.utc)
+        start, end = self.billing_period(now)
+        frac = (now - start).total_seconds() / (end - start).total_seconds()
+        return min(self.cfg.monthly_budget_usd, self.cfg.monthly_budget_usd * frac + self.cfg.pacing_burst_usd)
+
+    def budget_status(self) -> tuple[bool, str]:
+        """(can_spend, reason). Reasons: monthly credit used, daily safety cap, or ahead of the pace."""
         if not self.journal:
-            return 0.0
-        from .journal import start_of_utc_day
-        return self.journal.llm_spend_since(start_of_utc_day().replace(day=1))
+            return True, ""
+        month = self.spend_this_month()
+        if self.cfg.monthly_budget_usd is not None:
+            if month >= self.cfg.monthly_budget_usd:
+                return False, f"monthly AI credit budget used (${month:.2f} of ${self.cfg.monthly_budget_usd:.2f})"
+            if self.cfg.pacing:
+                allowed = self.paced_allowance()
+                if month >= allowed:
+                    return False, f"AI pacing: ${month:.2f} spent, ${allowed:.2f} allowed so far this period"
+        if self.spend_today() >= self.cfg.daily_budget_usd:
+            return False, f"daily AI safety cap reached (${self.cfg.daily_budget_usd:.2f})"
+        return True, ""
 
     def budget_exhausted(self) -> bool:
-        if not self.journal:
-            return False
-        return (self.spend_today() >= self.cfg.daily_budget_usd
-                or (self.cfg.monthly_budget_usd is not None and self.spend_this_month() >= self.cfg.monthly_budget_usd))
+        return not self.budget_status()[0]
+
+    def monthly_exhausted(self) -> bool:
+        return (bool(self.journal) and self.cfg.monthly_budget_usd is not None
+                and self.spend_this_month() >= self.cfg.monthly_budget_usd)
 
     # ------------------------------------------------------------ calls
     def structured(self, role: str, system: str, payload: dict, schema: Type[T]) -> Optional[T]:

@@ -77,8 +77,8 @@ class KillSwitchAgent(Agent):
         if len(slips) >= 3 and sum(slips) / len(slips) > ks.max_avg_slippage_bps:
             raise_to("PAUSE_ENTRIES", f"avg slippage {sum(slips) / len(slips):.1f}bps")
 
-        if self.llm.online and self.llm.budget_exhausted():
-            raise_to("PAUSE_ENTRIES", "LLM daily budget exhausted")
+        if self.llm.online and self.llm.monthly_exhausted():   # pacing waits are normal, not abnormal
+            raise_to("PAUSE_ENTRIES", "monthly AI credit budget used")
 
         if not any(a.data_ok for a in snap.assets.values()):
             raise_to("PAUSE_ENTRIES", "no clean market data")

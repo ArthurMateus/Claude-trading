@@ -86,8 +86,14 @@ llm:
   claude_cli_path: claude    # full path if `claude` isn't on PATH (Windows: ...\claude.exe)
   cli_timeout_seconds: 180
   cli_opus_fallback_model: claude-sonnet-5-5   # used automatically if your plan can't run Opus
-  monthly_budget_usd: 18.0   # stay under Pro's $20/month credit (leaves room for your own `claude -p` use)
-  daily_budget_usd: 0.60     # ~$18 / 30 days. Over budget => agents abstain, no new entries, stops stay live.
+  monthly_budget_usd: 19.5   # Pro's $20/month `claude -p` credit is the bot's whole AI allowance. Your weekly
+                             # Claude limits don't apply to `claude -p`, so the bot can't use them.
+  credit_reset_day: 1        # SET THIS to the day of month your Claude subscription renews
+  pacing: true               # spread the budget evenly across the billing month, 24/7; unused credit carries
+  pacing_burst_usd: 1.0      #   forward, and the bot may run up to this far ahead of the even pace
+  daily_budget_usd: 3.0      # runaway safety ceiling only (pacing is the normal limiter)
+  prescreen_min_score: 0.05  # free heuristic agents must lean long before any AI tokens are spent on an asset
+  reanalyze_cooldown_minutes: 30   # don't re-analyze the same asset + setups more often than this
   prefilter_min_abs_score: 0.15  # Opus is only consulted when the cheap agents agree at least this much
   market_data_review: false  # per-cycle Haiku data/regime review (fixed daily cost); off on the free plan
   orchestrator: {model: claude-opus-5-5, effort: medium, max_tokens: 16000}   # medium to stretch the credit
@@ -99,11 +105,11 @@ llm:
     quant:       {model: claude-sonnet-5-5, effort: low, max_tokens: 4000}
     fundamental: {model: claude-sonnet-5-5, effort: low, max_tokens: 4000}
     replication: {model: claude-sonnet-5-5, effort: low, max_tokens: 4000}
-    risk:        {model: claude-sonnet-5-5, effort: medium, max_tokens: 6000}
-    portfolio:   {model: claude-sonnet-5-5, effort: low, max_tokens: 4000}
+    risk:        {model: claude-sonnet-5-5, effort: low, max_tokens: 6000}
+    portfolio:   {model: claude-haiku-4-5, max_tokens: 2000}
     execution:   {model: claude-haiku-4-5, max_tokens: 1500}
     kill_switch: {model: claude-haiku-4-5, max_tokens: 1500}
-    post_trade:  {model: claude-sonnet-5-5, effort: medium, max_tokens: 6000}
+    post_trade:  {model: claude-sonnet-5-5, effort: low, max_tokens: 6000}
 
 news:                        # News Agent sources (see src/tradebot/data/news_sources.py)
   lookback_hours: 6

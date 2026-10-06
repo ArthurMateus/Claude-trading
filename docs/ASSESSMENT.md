@@ -48,9 +48,11 @@ know whether you have an edge. Nobody can promise one.
 7. **LLM cost can exceed the profit, especially on a $500 account.** Calling every agent on every asset every
    5 minutes costs about $50/day at API prices. → The bot runs the models through the **Claude Pro
    subscription** (`claude -p`), whose $20/month credit covers it at no extra cost. The intelligence layer and
-   Opus only run when a **validated setup fires**, per-cycle reviews are off, and the bot caps itself at
-   $18/month and $0.60/day. That buys roughly 5–8 fully analyzed decisions a day, enough for a $500 account
-   that holds at most ~3 positions. When the credit runs out the bot pauses entries; open positions keep their
+   Opus only run when a **validated setup fires** and the free heuristic agents already lean long, the same
+   asset/setup isn't re-analyzed within 30 minutes, per-cycle reviews are off, and the bot paces $19.50 per
+   billing month evenly around the clock (unused credit carries forward). That buys very roughly 6–15 fully
+   analyzed decisions a day, enough for a $500 account that holds at most ~3 positions. Your weekly Claude
+   limits can't add to this: `claude -p` runs only on the separate monthly credit. When the credit runs out the bot pauses entries; open positions keep their
    broker stops. The paper period still has to show the AI layer beats the free heuristics (`--offline`).
 8. **Prompt injection via news.** Headlines are untrusted text. → Prompts treat third-party text as data, and
    no LLM output can raise risk above the hard limits.

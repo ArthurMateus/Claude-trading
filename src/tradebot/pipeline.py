@@ -69,6 +69,10 @@ class Pipeline:
         self.signal_agents = [TechnicalAgent(ctx), QuantAgent(ctx), NewsAgent(ctx), FlowAgent(ctx),
                               FundamentalAgent(ctx)]
         self.replication = ReplicationAgent(ctx, provider)   # runs after the others: it reads their votes
+        # Free pre-screen: the same agents' deterministic heuristics (no AI tokens) vote first.
+        free_ctx = AgentContext(settings, LLMClient(settings.llm, None, offline=True), journal)
+        self.prescreen_agents = [TechnicalAgent(free_ctx), QuantAgent(free_ctx), FlowAgent(free_ctx)]
+        self._analyzed: dict[str, tuple[datetime, frozenset]] = {}
         self.orchestrator = Orchestrator(ctx)
         self.backtester = BacktestAgent(ctx)
         self.risk = RiskAgent(ctx)
@@ -113,6 +117,25 @@ class Pipeline:
         df = self.provider.bars(asset, self.s.bar_timeframe_minutes, start=now - timedelta(days=14), end=now)
         self._history[asset] = (now, df)
         return df
+
+    def ai_gate(self, st: AssetState, snap: MarketSnapshot) -> str:
+        """Why the AI layer should NOT be spent on this asset now ('' = go ahead). Only applies when online."""
+        if not self.llm.online:
+            return ""
+        ok, why = self.llm.budget_status()
+        if not ok:
+            return why
+        prev = self._analyzed.get(st.asset)
+        setups = frozenset(st.active_setups)
+        cooldown = timedelta(minutes=self.s.llm.reanalyze_cooldown_minutes)
+        if prev and utcnow() - prev[0] < cooldown and setups <= prev[1]:
+            return f"analyzed {int((utcnow() - prev[0]).total_seconds() // 60)} min ago (cooldown)"
+        if self.s.llm.prescreen_min_score is not None:
+            inputs = {"bars": snap.bars.get(st.asset), "history": self.history(st.asset)}
+            score = self.orchestrator.fused_score([a.analyze(st, **inputs) for a in self.prescreen_agents])
+            if score < self.s.llm.prescreen_min_score:
+                return f"free pre-screen {score:+.2f} < {self.s.llm.prescreen_min_score}"
+        return ""
 
     def gather_signals(self, st: AssetState, snap: MarketSnapshot) -> list[AgentSignal]:
         try:
@@ -215,7 +238,7 @@ class Pipeline:
         if ks.level != prev_level:
             self.notify.kill_switch_changed(prev_level, ks)
             self.journal.set_state("kill_switch_level", ks.level)
-        if self.llm.online and self.llm.budget_exhausted():
+        if self.llm.online and self.llm.monthly_exhausted():
             self.notify.budget_exhausted(self.llm.spend_today(), self.llm.spend_this_month())
         if ks.flatten:
             self.flatten_all(snap, ks.reasons[0] if ks.reasons else "halt", report)
@@ -239,6 +262,11 @@ class Pipeline:
             if not tradeable:   # cost gate: no LLM spend without a validated setup firing
                 report.skipped[asset] = "no validated setup active" if st.active_setups else "no setup"
                 continue
+            gate = self.ai_gate(st, snap)
+            if gate:
+                report.skipped[asset] = gate
+                continue
+            self._analyzed[asset] = (utcnow(), frozenset(st.active_setups))
             signals = self.gather_signals(st, snap)
             cand, why = self.orchestrator.fuse(st, signals, tradeable, sorted(held_assets))
             self.journal.log_decision(asset, "fusion", "CANDIDATE" if cand else "PASS",

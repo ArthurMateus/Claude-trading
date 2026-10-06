@@ -4,9 +4,9 @@ Answer any of these by editing this file or telling Claude. The *default* is wha
 
 ## Still open
 
-1. **Credit stretch:** the $20/month Pro credit buys roughly 5–8 fully analyzed trade decisions a day. If
-   it runs out mid-month, should the bot switch to heuristic-only (`--offline`) until it refreshes, or simply
-   pause entries (current)? *Default:* pause.
+1. **Credit stretch:** the $20/month Pro credit buys very roughly 6–15 fully analyzed decisions a day, paced
+   24/7. When it's paced out or used up, should the bot fall back to heuristic-only decisions, or pause entries
+   (current)? *Default:* pause. Also: what day does your Claude subscription renew (`llm.credit_reset_day`)?
 2. **Upgrade path:** if paper results justify it, move to Max ($100/month credit) or the paid API for more
    headroom? *Default:* no.
 3. **Max open positions "5–8"**: with $500 and a 30% per-position cap, at most ~3 positions fit at once anyway.
@@ -41,5 +41,5 @@ Answer any of these by editing this file or telling Claude. The *default* is wha
 | 2026-10-06 | Replication | Follow the system's own hot agents + setup momentum; external traders only after they earn trust |
 | 2026-10-06 | Fundamental | Stays disabled for now |
 | 2026-10-06 | Hosting | User's local machine (scripts + systemd/launchd/Task Scheduler templates) |
-| 2026-10-06 | AI cost | **Free beyond the Pro subscription:** `claude -p` backend on the user's Claude login, $18/month + $0.60/day caps, no API key, X/CryptoPanic off |
+| 2026-10-06 | AI cost | **Free beyond the Pro subscription:** `claude -p` backend on the user's Claude login, $19.50/month paced 24/7 (carry-over), free pre-screen + 30-min re-analysis cooldown, no API key, X/CryptoPanic off |
 | 2026-10-06 | Alerts | Discord webhook (`DISCORD_WEBHOOK_URL`) |

@@ -19,8 +19,10 @@ Read before non-trivial work: `docs/ASSESSMENT.md` (why the design looks like th
 - **$500 paper account** (`allocated_capital_usd: 500`: the bot trades a virtual $500 sub-account even if the
   Alpaca paper account holds more). Per-cycle LLM reviews (market data, kill-switch) off.
 - **No paid API.** The AI agents run through the user's **Claude Pro subscription** via `claude -p`
-  (`llm.backend: claude_cli`): Pro includes a $20/month credit for it; the bot caps itself at $18/month and
-  $0.60/day, and strips ANTHROPIC_API_KEY from the CLI env so it can never fall back to API billing. The user
+  (`llm.backend: claude_cli`): Pro includes a $20/month credit for it (the user's weekly Claude limits do NOT
+  apply to `claude -p`). The bot paces $19.50 per billing month evenly 24/7 with carry-over (`llm.pacing`,
+  `credit_reset_day`), spends AI tokens only after a free heuristic pre-screen, and won't re-analyze the same
+  asset/setup within 30 min; $3/day is only a runaway ceiling. It strips ANTHROPIC_API_KEY from the CLI env so it can never fall back to API billing. The user
   keeps "usage credits" off in claude.ai so the credit running out just stops calls. Orchestrator effort: medium.
 - **Discord alerts** via `DISCORD_WEBHOOK_URL` (`notify.py`): opens/closes, kill-switch changes, daily summary,
   budget reached, errors, paper-gate changes.
@@ -112,7 +114,7 @@ Also: `decisions` (every candidate + rejection reason), `events`, `equity`, `llm
 ## Current status (2026-10-06)
 - v0.3: all 15 agents, 8-setup library, multi-source news, replication of internal agents/setups with an
   earned-trust gate for external sources, $500 virtual sub-account, Claude-subscription AI backend, Discord
-  alerts, local deployment scripts. 45 offline tests green. The CLI backend was verified with real `claude -p` calls.
+  alerts, local deployment scripts. 52 offline tests green. The CLI backend was verified with real `claude -p` calls.
 - Not yet verified: the Alpaca adapter, live news feeds and the Discord webhook against the real services (the
   build sandbox blocked those hosts). The user's first supervised run is that test.
 - Open: derivatives flow data, event-risk policy, paper-gate thresholds (see `docs/OPEN_QUESTIONS.md`).

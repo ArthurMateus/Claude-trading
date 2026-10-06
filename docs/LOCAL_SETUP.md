@@ -10,7 +10,9 @@
   2. Run `claude` once and log in with your Claude account.
   3. In claude.ai → **Settings → Usage**, keep **usage credits OFF**. Pro includes a $20/month credit for
      `claude -p`; with usage credits off, calls just stop when it's used up, and you can never be billed extra.
-     The bot also stops itself at $18/month and $0.60/day (`llm:` in `config/settings.yaml`).
+     The bot paces itself to $19.50 per billing month, spread evenly 24/7. **Set `credit_reset_day`** in
+     `config/settings.yaml` (`llm:`) to the day your Claude subscription renews. Your weekly Claude limits don't
+     apply to `claude -p`, so the bot can't use them, and your own chats don't eat into the bot's credit.
   4. Don't put an `ANTHROPIC_API_KEY` in your shell profile. The bot strips it from the CLI's environment
      anyway, so it can't switch to API billing.
 - Optional: a **Discord webhook** for alerts (section 5)
