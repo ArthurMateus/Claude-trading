@@ -339,3 +339,19 @@ def test_null_samples_the_whole_test_window():
         test2026.simulate, test2026.NULL_REPS = orig, reps
     span = (idx[-1] - history.TEST_START)
     assert max(seen) - history.TEST_START > 0.9 * span
+
+
+def test_report_handles_a_run_where_no_portfolio_qualified(tmp_path):
+    from tradebot.research import report
+    meta = {"frozen_sha256": "a" * 64, "frozen_created_at": "2026-10-06T00:00:00+00:00", "source_sha256": "b" * 64,
+            "contaminated": False, "test_start": "2026-01-01", "test_end": "2026-10-06", "test_days": 278,
+            "assets": ["BTC/USD"], "start_equity": 500.0, "configs_searched": 1152, "prior_2026_runs": 0,
+            "test_files_cached_before_freeze": [], "headline_spec": search.HEADLINE, "beats_null": 0,
+            "beats_null_expected_by_chance": 0.1, "headline": None}
+    (tmp_path / "meta.json").write_text(json.dumps(meta))
+    pd.DataFrame([{"cost_model": "perp", "family": "ema_cross", "side": "long", "tf": 60, "validated": False,
+                   "test_trades": 50, "test_pf": 0.8, "ret_r1_x3": -4.0}]).to_csv(tmp_path / "strategies.csv", index=False)
+    pd.DataFrame().to_csv(tmp_path / "portfolio_grid.csv", index=False)
+    pd.DataFrame().to_csv(tmp_path / "equity_curves.csv")
+    text = report.write(tmp_path).read_text()
+    assert "No result" in text and "no champion passed the in-sample gate" in text
