@@ -103,9 +103,9 @@ def cmd_research(args) -> None:
             print(f"frozen {f['created_at']} sha256={f['frozen_sha256'][:12]} champions={len(f['champions'])} "
                   f"validated={sum(c['validated'] for c in f['champions'])} code_unchanged={ok} "
                   f"contaminated={f.get('contaminated', False)}")
-        print(f"2026 test runs so far: {len(search.ledger_entries())}")
         else:
             print("not frozen yet")
+        print(f"2026 test runs so far: {len(search.ledger_entries())}")
     elif args.action == "search":
         if search.FROZEN_PATH.exists() and not args.refreeze:
             sys.exit("research/frozen.json exists; the 2026 test must use it. Pass --refreeze to discard it.")
