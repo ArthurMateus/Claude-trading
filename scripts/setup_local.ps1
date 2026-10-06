@@ -3,19 +3,26 @@
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
 
-# Find a Python 3.11+ (the "py" launcher first, then "python").
-$py = $null
-foreach ($cand in @(@("py", "-3"), @("python"))) {
-    try {
-        $ver = & $cand[0] $cand[1..9] -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
-        if ($ver -and [version]$ver -ge [version]"3.11") { $py = $cand; break }
-    } catch {}
+# Find a Python 3.11+: the "py" launcher first, then "python" on PATH.
+$check = "import sys; print('%d.%d' % sys.version_info[:2])"
+$usePy = $false
+$usePython = $false
+try { $v = & py -3 -c $check 2>$null; if ($v -and [version]$v -ge [version]"3.11") { $usePy = $true } } catch {}
+if (-not $usePy) {
+    try { $v = & python -c $check 2>$null; if ($v -and [version]$v -ge [version]"3.11") { $usePython = $true } } catch {}
 }
-if (-not $py) { throw "Python 3.11 or newer not found. Install it from python.org (tick 'Add python.exe to PATH')." }
+if (-not ($usePy -or $usePython)) {
+    throw "Python 3.11 or newer not found. Install it from python.org (tick 'Add python.exe to PATH')."
+}
+Write-Host "Using Python $v"
 
-if (-not (Test-Path .venv)) { & $py[0] $py[1..9] -m venv .venv }
+if (-not (Test-Path .venv\Scripts\python.exe)) {
+    if ($usePy) { & py -3 -m venv .venv } else { & python -m venv .venv }
+}
+if (-not (Test-Path .venv\Scripts\python.exe)) { throw "Could not create the .venv virtual environment." }
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip | Out-Null
 & .\.venv\Scripts\python.exe -m pip install -e ".[dev,research]"
+if ($LASTEXITCODE -ne 0) { throw "pip install failed (see the messages above)." }
 if (-not (Test-Path .env)) { Copy-Item .env.example .env; Write-Host "Created .env - fill in your keys before running." }
 & .\.venv\Scripts\python.exe -m pytest -q
 & .\.venv\Scripts\tradebot.exe --mode simulated --offline cycle | Out-Null
