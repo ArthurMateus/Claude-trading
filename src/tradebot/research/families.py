@@ -45,9 +45,9 @@ def _htf_align(df: pd.DataFrame, values: pd.Series, htf_minutes: int, tf: int) -
     return shifted.reindex(df.index, method="ffill")
 
 
-def _resample(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
+def _resample(df: pd.DataFrame, minutes: int, base: int) -> pd.DataFrame:
     from .history import resample
-    return resample(df, minutes)
+    return resample(df, minutes, base=base)
 
 
 # ---------------------------------------------------------------- breakout / momentum
@@ -128,7 +128,7 @@ def ema_cross(df, side, tf, fast, slow, trend_filter):
 def mtf_pullback(df, side, tf, rsi_level):
     """Higher-timeframe (4x) trend + pullback on this timeframe that resumes above/below EMA20."""
     htf = 4 * tf
-    h = _resample(df, htf)
+    h = _resample(df, htf, base=tf)
     up = _htf_align(df, (ema(h["close"], 50) > ema(h["close"], 200)).astype(float), htf, tf) > 0.5
     close, e20 = df["close"], ema(df["close"], 20)
     r = rsi(close)

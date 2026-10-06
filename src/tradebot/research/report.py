@@ -110,39 +110,80 @@ def write(out_dir: Path = RESULTS) -> Path:
         curves = pd.read_csv(out_dir / "equity_curves.csv", index_col=0, parse_dates=True)
     except Exception:
         curves = pd.DataFrame()
+    hs, hl = meta["headline_spec"], meta.get("headline")
+    integrity = []
+    if meta.get("contaminated"):
+        integrity.append("⚠️ **CONTAMINATED:** these strategies were searched after 2026 had already been viewed. "
+                         "Treat every number below as in-sample.")
+    if meta.get("prior_2026_runs"):
+        integrity.append(f"⚠️ 2026 was tested {meta['prior_2026_runs']} time(s) before this run "
+                         "(research/test_ledger.jsonl).")
+    if meta.get("test_files_cached_before_freeze"):
+        integrity.append(f"⚠️ {len(meta['test_files_cached_before_freeze'])} 2026 data file(s) existed on disk "
+                         "before the freeze.")
+    if not integrity:
+        integrity.append("✅ First run on 2026 for this freeze; no 2026 data was cached before the freeze; not "
+                         "contaminated (checked from the ledger and file timestamps).")
     lines = [
         "# 2026 out-of-sample test",
         "",
-        f"- Test window: **{meta['test_start']} → {meta['test_end']}** ({meta['test_days']} days), assets: "
-        f"{', '.join(meta['assets'])}, start equity ${meta['start_equity']:.0f}",
-        f"- Strategies frozen at {meta['frozen_created_at']} (sha256 `{meta['frozen_sha256'][:16]}…`) after "
-        f"searching **{meta['configs_searched']} configurations** on 2022–2024 and selecting on 2025. "
-        "No 2026 data was loaded before freezing.",
-        "- Costs: `alpaca_spot` = 0.25% fee + 0.05% slippage per side, long-only, 1x. `perp` = 0.05% fee + "
-        "0.03% slippage per side + 0.01%/8h funding, long and short, up to 20x with liquidation modeled.",
+        "## Headline (pre-registered before testing)",
+        "",
+        f"`{hs['cost_model']}` · {hs['portfolio']} strategies · {hs['risk_pct']}% risk per trade · "
+        f"{hs['leverage']}x · circuit breakers on:",
+        "",
+        (f"**{hl['return_pct']:+.1f}%** (${meta['start_equity']:.0f} → ${hl['final_equity']:.2f}), max drawdown "
+         f"{hl['max_drawdown_pct']:.1f}% (mark-to-market), {int(hl['trades'])} trades, "
+         f"{int(hl['strategies'])} strategies." if hl else
+         "**No result: no strategy passed validation for this venue, so the headline portfolio is empty "
+         "(the bot would not have traded).**"),
+        "",
+        "Everything after this section is sensitivity analysis. Picking the best cell after the fact is "
+        "selection on the test set.",
+        "",
+        "## Integrity",
+        "",
+        *[f"- {x}" for x in integrity],
+        f"- Test window **{meta['test_start']} → {meta['test_end']}** ({meta['test_days']} days); assets "
+        f"{', '.join(meta['assets'])}; start equity ${meta['start_equity']:.0f}.",
+        f"- Frozen {meta['frozen_created_at']} (sha256 `{meta['frozen_sha256'][:16]}…`, code `"
+        f"{meta['source_sha256'][:12]}…`) after searching **{meta['configs_searched']} configurations** on "
+        "2022–2024 and selecting on 2025.",
+        "- Costs: `alpaca_spot` = 0.25% fee + slippage 0.05% (BTC/ETH) or 0.15% (others) per side, long-only, 1x. "
+        "`perp` = 0.05% fee + 0.03% slippage per side + 0.01%/8h funding, long+short, ≤ 20x, liquidation modeled.",
+        "- Drawdowns are mark-to-market on 5-minute closes; one position per asset; max 8 positions.",
+        "- \"Circuit breakers\" = no new entries after a 5% daily loss, and close everything + stop at a 15% "
+        "drawdown. The bot's other limits (calibrated sizing, 6% heat cap, 30% notional cap) are NOT applied "
+        "here, which is why 10–20% risk is even possible.",
         "",
         "## Strategy champions (one per family and side, per venue)",
+        "",
+        "`beats_null` = test expectancy above the 95th percentile of random entries with the same exits. "
+        "`noise` = fewer than 40 test trades. Jan–Jun vs Jul–now: the families were designed by a model with "
+        "training data to mid-2026, so Jul–now is the cleaner window.",
         "",
     ]
     for cm in strategies["cost_model"].unique():
         s = strategies[strategies["cost_model"] == cm]
         lev = 1 if cm == "alpaca_spot" else 3
-        cols = ["family", "side", "tf", "validated", "train_profit_factor", "val_profit_factor", "test_trades",
-                "test_win_rate", "test_profit_factor", "test_expectancy_bps"]
+        cols = [c for c in ["family", "side", "tf", "validated", "train_pf", "val_pf", "val_t", "test_trades",
+                            "test_pf", "test_exp_bps", "test_t", "exp_bps_jan_jun", "exp_bps_jul_now",
+                            "null_exp_bps", "beats_null", "noise"] if c in s]
         ret_cols = [c for c in (f"ret_r1_x{lev}", f"ret_r5_x{lev}", f"ret_r10_x{lev}", f"ret_r20_x{lev}") if c in s]
         view = s[cols + ret_cols].rename(columns={c: c.replace("ret_r", "ret@").replace(f"_x{lev}", f"%,{lev}x")
                                                   for c in ret_cols})
         lines += [f"### `{cm}`", "", _table(view, pct_cols=[c for c in view.columns if c.startswith("ret@")]), ""]
     if not grid.empty:
-        lines += ["## Combined portfolios: return by risk per trade × leverage", ""]
+        lines += ["## Combined portfolios: return by risk per trade × leverage (sensitivity)", ""]
         for (cm, pf), g in grid.groupby(["cost_model", "portfolio"]):
             for guard in (False, True):
                 gg = g[g["guardrails"] == guard]
                 piv = gg.pivot(index="risk_pct", columns="leverage", values="return_pct")
                 dd = gg.pivot(index="risk_pct", columns="leverage", values="max_drawdown_pct")
-                tag = "with the bot's guardrails (5% daily stop, 15% DD halt)" if guard else "raw"
-                lines += [f"### `{cm}` · {pf} · {tag} ({int(gg['strategies'].iloc[0])} strategies)", "",
-                          "Return % (max drawdown %):", ""]
+                tag = "with circuit breakers (5% daily stop, 15% DD close-all + halt)" if guard else "raw"
+                ref = " — reference only, includes strategies 2025 rejected" if pf != "validated" else ""
+                lines += [f"### `{cm}` · {pf} · {tag} ({int(gg['strategies'].iloc[0])} strategies){ref}", "",
+                          "Return % (max mark-to-market drawdown %):", ""]
                 table = pd.DataFrame({f"{c}x": [f"{piv.loc[r, c]:+.1f}% ({dd.loc[r, c]:.0f}%)" for r in piv.index]
                                       for c in piv.columns}, index=[f"{r}% risk" for r in piv.index])
                 lines += [_table(table.reset_index().rename(columns={"index": "risk"})), ""]
@@ -156,7 +197,7 @@ def write(out_dir: Path = RESULTS) -> Path:
                         lines += [f"![equity]({eq.name})", ""]
                 ruined = gg[gg["ruined"]]
                 if len(ruined):
-                    lines += [f"Ruined (equity < 1% of start): " + ", ".join(
+                    lines += ["Ruined (equity < 1% of start): " + ", ".join(
                         f"{r.risk_pct}% @ {r.leverage}x" for r in ruined.itertuples()), ""]
     else:
         lines += ["## Combined portfolios", "", "_No strategy produced test trades._", ""]

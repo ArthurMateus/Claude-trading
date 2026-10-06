@@ -10,14 +10,19 @@ $500 account?*
 |---|---|---|
 | 2022-01-01 → 2024-12-31 | **design**: grid search over 12 strategy families × parameters × long/short × 5m/15m/1h × 4 exit rules (~1,000 configurations per asset universe) | `history.load` |
 | 2025-01-01 → 2025-12-31 | **selection**: each family's in-sample champion must hold up on a year it never saw | `search.select` |
-| freeze | champions + rules + cost models written to `research/frozen.json` with a sha256, plus a hash of the research code | `search.freeze` |
-| 2026-01-01 → today | **one-shot test** of the frozen champions, every risk level and leverage | `history.load` raises `LookaheadError` for 2026 unless called by `test2026.run`, which refuses to run if `frozen.json` or the research code changed |
+| freeze | champions, rules, cost models and the **pre-registered headline** written to `research/frozen.json` with a sha256, plus a hash of all code that affects results (incl. indicators, portfolio, test runner) | `search.freeze` |
+| 2026-01-01 → today | **one-shot test** of the frozen champions, every risk level and leverage | `history.load` raises `LookaheadError` for 2026 unless called by `test2026.run`, which refuses to run if `frozen.json` or that code changed. Every run is appended to `research/test_ledger.jsonl`. Once 2026 has been viewed, a new search needs `--contaminated` and the report says so. 2026 cache files older than the freeze are flagged. |
+
+**Pre-registered headline:** `alpaca_spot` (the venue the bot trades), validated strategies only, 1% risk, 1x,
+circuit breakers on. The report prints this first. Every other cell is sensitivity analysis.
 
 **Selection rule** (per venue cost model, per family and side):
-1. In-sample 2022–2024: ≥ 150 trades pooled over the 7 coins, profit factor ≥ 1.1 after costs, and positive
-   expectancy in at least 2 of the 3 years. Among those, the highest t-stat wins.
-2. Validation 2025: ≥ 40 trades, profit factor ≥ 1.1, positive expectancy. Otherwise the champion is still
-   frozen and reported, flagged *not validated*.
+1. In-sample 2022–2024: ≥ 150 non-overlapping trades pooled over the 7 coins, profit factor ≥ 1.1 after costs,
+   and positive expectancy in at least 2 of the 3 years. Among those, the highest **day-clustered** t-stat wins,
+   so simultaneous BTC/ETH/SOL trades on one move don't count as independent evidence.
+2. Validation 2025: ≥ 100 trades, profit factor ≥ 1.1, positive expectancy **and** a day-clustered t-stat ≥ 2.
+   A PF-only gate lets 20–40% of zero-edge strategies through; this one lets roughly 2–3% through. Champions
+   that fail are still frozen and reported, flagged *not validated*.
 
 Every champion is reported on 2026, including the failures, so the results can't be cherry-picked.
 
@@ -43,21 +48,32 @@ Shorts only exist on the perp venue.
 
 ## Costs and venues
 
-- `alpaca_spot`: 0.25% fee + 0.05% slippage per side, long-only, no leverage. This is what the bot trades today.
+- `alpaca_spot`: 0.25% fee per side plus slippage of 0.05% (BTC, ETH) or 0.15% (thinner Alpaca books: SOL,
+  LTC, LINK, AVAX, DOGE) per side, long-only, no leverage. This is what the bot trades today.
 - `perp`: 0.05% fee + 0.03% slippage per side, 0.01% funding per 8h held, long and short, leverage up to 20x.
   Isolated-margin liquidation is modeled: margin = notional / leverage, lost if the move against the position
   reaches 1/leverage − 0.5% before the exit. **The bot cannot trade this venue yet.** These rows show what a
   futures account would have done.
 
 Fills are conservative: next-bar-open entries, the stop wins when stop and target touch in one bar, gaps through
-the stop fill at the worse open, and the take-profit never fills better than the target.
+the stop fill at the worse open, and the take-profit never fills better than the target. Exits are timestamped
+at the close of their bar, so their P&L can't be reused early. Trades of one configuration on one asset never
+overlap, and windows that span exchange data gaps are dropped.
+
+**Every strategy is compared with a random-entry null:** the same exits, side and timeframe on random entries at
+the same per-asset frequency, under the same costs, 20 times. `beats_null` means test expectancy above the
+null's 95th percentile. Fewer than 40 test trades is flagged `noise`. Results are also split into **Jan–Jun** and
+**Jul–now 2026**; the second half is the cleaner window (see caveats).
 
 ## Risk × leverage
 
 Each combined portfolio (all validated strategies of a venue) is replayed at 1, 2, 3, 5, 7.5, 10, 15 and 20%
-risk per trade and 1, 2, 3, 5, 10 and 20x leverage, from $500. Position size = risk × equity ÷ stop distance,
-capped by leverage × equity across open positions (max 8). Each run is shown raw and with the bot's circuit
-breakers: no new entries after a 5% daily loss, and a permanent halt at a 15% drawdown.
+risk per trade and 1, 2, 3, 5, 10 and 20x leverage, from $500. Position size = risk × mark-to-market equity ÷
+stop distance, capped by leverage × equity across open positions (max 8, one per asset). **Equity is marked to
+market on 5-minute closes**, so drawdowns include open losses across correlated positions. Each run is shown
+raw and with the bot's **circuit breakers only**: no new entries once equity is down 5% since UTC midnight;
+at a 15% drawdown everything is closed and trading stops. The bot's other limits (calibrated sizing, heat cap,
+notional cap) are deliberately not applied, since they would make 10–20% risk impossible.
 
 ## Running it
 
@@ -76,12 +92,12 @@ tradebot research status
 - **Multiple testing.** ~1,000 configurations were tried, and the best of many always looks good in-sample. The
   2025 validation and the 2026 test are what protect against that.
 - **Model knowledge.** Claude's training data runs to mid-2026, so the strategy *families* were chosen by a
-  model that has some knowledge of 2026 markets. The parameter selection is mechanical and frozen, which limits
-  but doesn't eliminate this.
+  model that has some knowledge of Jan–Jun 2026 markets. The parameter selection is mechanical and frozen, which
+  limits but doesn't eliminate this. Judge mainly by the **Jul–now** columns.
 - **Binance as proxy.** Binance USDT spot prices stand in for Alpaca's USD pairs. Price paths match closely, but
   Alpaca's own books are thinner and real slippage may be higher than modeled.
-- **Realized-equity drawdowns** are slightly understated versus mark-to-market. The worst intra-trade loss is
-  reported separately.
+- **Intra-bar extremes** between 5-minute closes aren't in the drawdown (they are in each trade's liquidation
+  check via its maximum adverse excursion).
 - **Live guardrails differ.** The bot also enforces calibrated sizing (1% until earned), a 6% heat cap and a 30%
   notional cap. With those, 10–20% risk per trade can't happen live without changing limits, which needs your
   explicit approval.

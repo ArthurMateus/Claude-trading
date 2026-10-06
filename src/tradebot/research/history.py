@@ -121,9 +121,10 @@ def load(asset: str, start: datetime, end: datetime, interval: str = "5m", *, al
     return df[(df.index >= start) & (df.index < end)]
 
 
-def resample(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
-    """OHLCV bars of `minutes`, indexed by bar OPEN time like the source. Incomplete trailing bar dropped."""
-    if minutes == 5:
+def resample(df: pd.DataFrame, minutes: int, base: int = 5) -> pd.DataFrame:
+    """OHLCV bars of `minutes` from `base`-minute bars, indexed by bar OPEN time like the source.
+    Bars missing more than 20% of their source bars (incl. an incomplete trailing bar) are dropped."""
+    if minutes == base:
         return df
     rule = f"{minutes}min"
     agg = {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
@@ -131,8 +132,20 @@ def resample(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
         agg["taker_buy_base"] = "sum"
     out = df.resample(rule, label="left", closed="left").agg(agg).dropna(subset=["open"])
     counts = df["close"].resample(rule, label="left", closed="left").count()
-    full = counts.reindex(out.index) >= minutes // 5 * 0.8
+    full = counts.reindex(out.index) >= minutes // base * 0.8
     return out[full]
+
+
+def test_files_cached_before(ts: datetime, assets: list[str], interval: str = "5m", cache: Path = CACHE) -> list[str]:
+    """Test-period cache files that already existed before `ts` (e.g. before the freeze): evidence of peeking."""
+    out = []
+    for a in assets:
+        folder = cache / binance_symbol(a) / interval
+        for p in folder.glob("*.parquet") if folder.exists() else []:
+            y, m = map(int, p.stem.split("-"))
+            if (y, m) >= (TEST_START.year, TEST_START.month) and p.stat().st_mtime < ts.timestamp():
+                out.append(str(p))
+    return out
 
 
 def coverage(asset: str, interval: str = "5m", cache: Path = CACHE) -> Optional[tuple[str, str]]:

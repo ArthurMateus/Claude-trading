@@ -101,23 +101,30 @@ def cmd_research(args) -> None:
             f = search.load_frozen(check_source=False)
             ok = f["source_sha256"] == search.source_hash()
             print(f"frozen {f['created_at']} sha256={f['frozen_sha256'][:12]} champions={len(f['champions'])} "
-                  f"validated={sum(c['validated'] for c in f['champions'])} code_unchanged={ok}")
+                  f"validated={sum(c['validated'] for c in f['champions'])} code_unchanged={ok} "
+                  f"contaminated={f.get('contaminated', False)}")
+        print(f"2026 test runs so far: {len(search.ledger_entries())}")
         else:
             print("not frozen yet")
     elif args.action == "search":
         if search.FROZEN_PATH.exists() and not args.refreeze:
             sys.exit("research/frozen.json exists; the 2026 test must use it. Pass --refreeze to discard it.")
-        body = search.run_search(assets)
+        views = len(search.ledger_entries())
+        if views and not args.contaminated:
+            sys.exit(f"2026 was already tested {views} time(s). A new search would be fit knowing 2026; pass "
+                     "--contaminated to proceed, and the report will say so.")
+        body = search.run_search(assets, contaminated=args.contaminated)
         for c in body["champions"]:
             print(f"{'VALID' if c['validated'] else '     '} {c['cost_model']:11} {c['id']:80} "
                   f"train PF {c['train']['profit_factor']:.2f} val PF {c['validation']['profit_factor']:.2f}")
         print(f"frozen -> {search.FROZEN_PATH} ({body['frozen_sha256'][:12]})")
     elif args.action == "test2026":
         frozen = search.load_frozen()
+        peeked = history.test_files_cached_before(datetime.fromisoformat(frozen["created_at"]), frozen["assets"])
         end = datetime.now(timezone.utc)
         for a in frozen["assets"]:
             history.download(a, history.TEST_START - test2026.WARMUP, end)
-        res = test2026.run(frozen)
+        res = test2026.run(frozen, peeked_files=peeked)
         from .research import report
         print(json.dumps(res["meta"], indent=1))
         print(f"report: {report.write()}")
@@ -141,6 +148,8 @@ def main(argv: list[str] | None = None) -> None:
     rs = sub.add_parser("research")
     rs.add_argument("action", choices=["download", "search", "test2026", "status"])
     rs.add_argument("--refreeze", action="store_true", help="discard research/frozen.json and search again")
+    rs.add_argument("--contaminated", action="store_true",
+                    help="allow a new search after 2026 was already viewed (stamped into the report)")
     ex = sub.add_parser("export")
     ex.add_argument("path", nargs="?", default="data/trades.csv")
     args = ap.parse_args(argv)

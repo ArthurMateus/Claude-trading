@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 import pytest
+from pathlib import Path
 
 from tradebot.data.providers import SyntheticProvider
 from tradebot.research import history, search
@@ -99,58 +100,179 @@ def test_stop_first_gap_fill_and_short_side():
     assert f.exit_reason == "time_stop" and f.hours == pytest.approx(0.5)
 
 
-# ---------------------------------------------------------------- portfolio
+# ---------------------------------------------------------------- portfolio (mark-to-market)
 
-def _trades(n=10, gross=0.01, stop=0.01, mae=0.005, side="long", start="2026-01-02"):
-    ts = pd.date_range(start, periods=n, freq="6h", tz="UTC")
-    return pd.DataFrame({"strategy": "s", "asset": "BTC/USD", "entry_ts": ts, "exit_ts": ts + pd.Timedelta("1h"),
-                         "side": side, "stop_frac": stop, "gross": gross, "hours": 1.0, "mae": mae})
+T0 = pd.Timestamp("2026-01-02", tz="UTC")
+
+
+def _prices(assets=("BTC/USD",), periods=2000, path=None):
+    idx = pd.date_range(T0, periods=periods, freq="5min")
+    return pd.DataFrame({a: (path if path is not None else np.full(periods, 100.0)) for a in assets}, index=idx)
+
+
+def _trade(asset="BTC/USD", start_bar=0, bars=12, gross=0.01, stop=0.01, mae=0.005, side="long", strategy="s"):
+    entry_ts = T0 + pd.Timedelta(minutes=5 * start_bar)
+    return {"strategy": strategy, "asset": asset, "entry_ts": entry_ts,
+            "exit_ts": entry_ts + pd.Timedelta(minutes=5 * bars), "side": side, "entry": 100.0,
+            "stop_frac": stop, "gross": gross, "hours": bars * 5 / 60, "mae": mae}
+
+
+def _trades(rows):
+    return pd.DataFrame(rows)
 
 
 def test_spot_caps_notional_at_equity():
-    r = simulate_portfolio(_trades(1, gross=0.01, stop=0.01), PERP, risk_pct=20, leverage=1)
-    # 20% risk with a 1% stop wants 20x notional; 1x caps it at equity
-    assert r.final_equity == pytest.approx(500 * (1 + 0.01 - 2 * 8 / 1e4 - 1 / 1e4 / 8), abs=0.01)
+    r = simulate_portfolio(_trades([_trade()]), PERP, risk_pct=20, leverage=1, prices=_prices())
+    expected = 500 * (1 + 0.01 - 2 * 8 / 1e4 - 1 / 1e4 / 8)
+    assert r.final_equity == pytest.approx(expected, abs=0.01)     # 20x wanted, 1x allowed
 
 
 def test_high_leverage_gets_liquidated_and_can_ruin():
-    r = simulate_portfolio(_trades(3, gross=-0.01, stop=0.01, mae=0.06), PERP, risk_pct=20, leverage=20)
+    r = simulate_portfolio(_trades([_trade(start_bar=i * 30, gross=-0.01, mae=0.06) for i in range(3)]),
+                           PERP, risk_pct=20, leverage=20, prices=_prices())
     assert r.liquidations >= 1 and r.final_equity < 500
-    big = simulate_portfolio(_trades(20, gross=-0.012, stop=0.01, mae=0.012), PERP, risk_pct=20, leverage=20)
+    big = simulate_portfolio(_trades([_trade(start_bar=i * 30, gross=-0.012, mae=0.012) for i in range(40)]),
+                             PERP, risk_pct=20, leverage=20, prices=_prices())
     assert big.ruined or big.final_equity < 50
 
 
 def test_spot_model_drops_shorts():
-    r = simulate_portfolio(_trades(5, side="short"), ALPACA_SPOT, risk_pct=1, leverage=1)
+    r = simulate_portfolio(_trades([_trade(side="short")]), ALPACA_SPOT, risk_pct=1, leverage=1, prices=_prices())
     assert r.trades == 0
 
 
-def test_guardrails_halt_on_drawdown():
-    losers = _trades(30, gross=-0.02, stop=0.01, mae=0.02)
-    raw = simulate_portfolio(losers, PERP, risk_pct=5, leverage=10)
-    guarded = simulate_portfolio(losers, PERP, risk_pct=5, leverage=10, guardrails=True)
-    assert guarded.halted_at and guarded.final_equity > raw.final_equity
-    assert guarded.max_drawdown_pct < 30
+def test_drawdown_is_mark_to_market_with_concurrent_losers():
+    """8 positions dip together, then all close in profit: realized DD would be 0, true DD is large."""
+    assets = [f"A{i}/USD" for i in range(8)]
+    path = np.full(2000, 100.0)
+    path[5:10] = 99.1                                   # all eight sit 0.9% under water together
+    rows = [_trade(asset=a, start_bar=0, bars=24, gross=0.005, stop=0.01, mae=0.009) for a in assets]
+    r = simulate_portfolio(_trades(rows), PERP, risk_pct=5, leverage=20, prices=_prices(assets, path=path))
+    # 20x caps total notional at $10k (4 positions); a 0.9% dip on $10k is an 18% drawdown that realized-only
+    # accounting would have reported as 0%
+    assert r.final_equity > 500 and r.max_drawdown_pct == pytest.approx(18.0, abs=0.5)
 
 
-# ---------------------------------------------------------------- selection + freeze
+def test_exit_pnl_is_not_available_before_the_exit_bar_closes():
+    """A exits inside the bar B enters on: B must be sized without A's P&L (A is still open)."""
+    a = _trade(asset="BTC/USD", start_bar=0, bars=12, gross=0.10, stop=0.01)          # exits at bar-12 close
+    b = _trade(asset="ETH/USD", start_bar=11, bars=6, gross=0.0, stop=0.01, strategy="b")  # enters at bar 11 open
+    prices = _prices(("BTC/USD", "ETH/USD"))
+    r = simulate_portfolio(_trades([a, b]), PERP, risk_pct=1, leverage=20, prices=prices)
+    a_only = simulate_portfolio(_trades([a]), PERP, risk_pct=1, leverage=20, prices=prices)
+    b_pnl = r.final_equity - a_only.final_equity
+    # B sized on ~$500 (A unrealized at a flat price), not on $500 + A's ~$50 profit
+    assert b_pnl == pytest.approx(-(0.01 * 500 / 0.01) * (2 * 8 / 1e4 + 0.5 / 8 / 1e4), rel=0.02)
 
-def test_select_freeze_and_tamper_detection(tmp_path):
-    ts = pd.date_range("2022-01-01", periods=1200, freq="1D", tz="UTC")
+
+def test_daily_stop_counts_losses_before_the_first_entry_of_the_day():
+    late = _trade(asset="ETH/USD", start_bar=348, bars=6, gross=0.01, strategy="b")     # day 2, 05:00
+    prices = _prices(("BTC/USD", "ETH/USD"))
+    # -7% realized on day 1 (exit closes 23:00): a new day starts clean, the 05:00 entry is allowed
+    day1 = _trade(asset="BTC/USD", start_bar=270, bars=6, gross=-0.07, stop=0.01, mae=0.07)
+    g1 = simulate_portfolio(_trades([day1, late]), PERP, risk_pct=100, leverage=1, prices=prices, guardrails=True)
+    assert g1.trades == 2 and g1.skipped == 0
+    # -7% realized at 00:20 on day 2, BEFORE that day's first entry: the 05:00 entry must be blocked
+    day2 = _trade(asset="BTC/USD", start_bar=280, bars=12, gross=-0.07, stop=0.01, mae=0.07)
+    g2 = simulate_portfolio(_trades([day2, late]), PERP, risk_pct=100, leverage=1, prices=prices, guardrails=True)
+    raw = simulate_portfolio(_trades([day2, late]), PERP, risk_pct=100, leverage=1, prices=prices)
+    assert g2.trades == 1 and g2.skipped == 1 and raw.trades == 2
+
+
+def test_guardrails_flatten_and_halt_on_drawdown():
+    path = np.full(2000, 100.0)
+    path[20:] = 90.0                                        # 10% drop while long at 3x on ~100% notional
+    rows = [_trade(start_bar=0, bars=40, gross=-0.10, stop=0.12, mae=0.10)] + \
+           [_trade(start_bar=100 + i * 20, bars=12, gross=0.01, strategy=f"x{i}") for i in range(5)]
+    raw = simulate_portfolio(_trades(rows), PERP, risk_pct=40, leverage=3, prices=_prices(path=path))
+    guarded = simulate_portfolio(_trades(rows), PERP, risk_pct=40, leverage=3, prices=_prices(path=path),
+                                 guardrails=True)
+    assert guarded.halted_at and guarded.trades == 1 and raw.trades == 6
+
+
+def test_one_position_per_asset():
+    rows = [_trade(start_bar=0, bars=24), _trade(start_bar=2, bars=6, strategy="other")]
+    r = simulate_portfolio(_trades(rows), PERP, risk_pct=1, leverage=3, prices=_prices())
+    assert r.trades == 1 and r.skipped == 1
+
+
+# ---------------------------------------------------------------- engine timing + overlap
+
+def test_exit_timestamp_is_bar_close_and_trades_do_not_overlap():
+    n = 120
+    base = np.full(n, 100.0)
+    df = _df(base.copy(), base + 0.01, base - 0.01, base.copy(), freq="60min")
+    trades = simulate(df, np.arange(60, 80), "long", [(5.0, 2.0)], 4, "BTC/USD", 60)[(5.0, 2.0)]
+    assert (trades["exit_ts"] - trades["entry_ts"] == pd.Timedelta(hours=4)).all()   # 4 bars, closes at bar end
+    assert (trades["entry_ts"].iloc[1:].to_numpy() >= trades["exit_ts"].iloc[:-1].to_numpy()).all()
+
+
+def test_every_family_fires_on_every_timeframe():
+    df = SyntheticProvider(seed=4).bars("BTC/USD", 5, limit=20000).copy()
+    df["taker_buy_base"] = df["volume"] * np.random.default_rng(0).uniform(0.3, 0.7, len(df))
+    for tf in TIMEFRAMES:
+        d = history.resample(df, tf)
+        for fam in FAMILIES.values():
+            if fam.name == "climax_reversal":
+                continue   # random walks have no volume climaxes with rejection wicks
+            fired = sum(len(entry_edges(fam.signal(d, side, tf, **p))) for p in fam.param_sets()
+                        for side in ("long", "short"))
+            assert fired > 0, (fam.name, tf)
+
+
+# ---------------------------------------------------------------- selection + freeze + ledger
+
+def _select_doc():
+    ts = pd.date_range("2022-01-01", periods=1400, freq="1D", tz="UTC")
     rng = np.random.default_rng(0)
-    good = pd.DataFrame({"entry_ts": ts, "gross": 0.004 + rng.normal(0, 0.01, len(ts)), "hours": 1.0})
+    good = pd.DataFrame({"entry_ts": ts, "gross": 0.004 + rng.normal(0, 0.01, len(ts)), "hours": 1.0,
+                         "asset": "BTC/USD"})
     bad = good.assign(gross=-0.004 + rng.normal(0, 0.01, len(ts)))
     fam = "ema_cross"
     g_id = f"{fam}|long|60m|fast=9,slow=50,trend_filter=True|stop1.5xATR,rr2.0"
     b_id = f"{fam}|long|60m|fast=20,slow=100,trend_filter=False|stop1.0xATR,rr2.0"
-    doc = search.select({g_id: good, b_id: bad})
+    return search.select({g_id: good, b_id: bad}), g_id
+
+
+def test_select_freeze_and_tamper_detection(tmp_path):
+    doc, g_id = _select_doc()
     perp = [c for c in doc["champions"] if c["cost_model"] == "perp"][0]
     assert perp["id"] == g_id and perp["validated"] and perp["params"]["trend_filter"] is True
     path = tmp_path / "frozen.json"
-    body = search.freeze(doc, ["BTC/USD"], path)
+    body = search.freeze(doc, ["BTC/USD"], path, ledger=tmp_path / "ledger.jsonl")
+    assert body["headline"] == search.HEADLINE and body["contaminated"] is False
     assert search.load_frozen(path)["frozen_sha256"] == body["frozen_sha256"]
     tampered = json.loads(path.read_text())
     tampered["champions"][0]["validated"] = not tampered["champions"][0]["validated"]
     path.write_text(json.dumps(tampered))
     with pytest.raises(RuntimeError):
         search.load_frozen(path)
+
+
+def test_zero_edge_rarely_validates():
+    ts = pd.date_range("2022-01-01", periods=1400, freq="1D", tz="UTC")
+    passed = 0
+    for seed in range(40):
+        rng = np.random.default_rng(seed)
+        cost = (2 * (5 + 3) + 1 / 8) / 1e4                # perp round trip + 1h of funding
+        noise = pd.DataFrame({"entry_ts": ts, "gross": cost + rng.normal(0, 0.01, len(ts)), "hours": 1.0,
+                              "asset": "ETH/USD"})        # exactly zero edge after perp costs
+        sid = "ema_cross|long|60m|fast=9,slow=50,trend_filter=True|stop1.5xATR,rr2.0"
+        champ = [c for c in search.select({sid: noise})["champions"] if c["cost_model"] == "perp"][0]
+        passed += champ["validated"]
+    assert passed <= 4                                 # ~2.5% expected at t >= 2
+
+
+def test_ledger_blocks_refreeze_unless_contaminated(tmp_path):
+    doc, _ = _select_doc()
+    ledger = tmp_path / "ledger.jsonl"
+    search.record_test_run({"run_at": "x"}, ledger)
+    with pytest.raises(RuntimeError):
+        search.freeze(doc, ["BTC/USD"], tmp_path / "f.json", ledger=ledger)
+    body = search.freeze(doc, ["BTC/USD"], tmp_path / "f.json", contaminated=True, ledger=ledger)
+    assert body["contaminated"] and body["prior_2026_views"] == 1
+
+
+def test_source_hash_covers_indicators_and_portfolio():
+    names = {Path(n).name for n in search.SOURCE_FILES}
+    assert {"indicators.py", "portfolio.py", "test2026.py"} <= names
