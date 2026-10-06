@@ -33,11 +33,13 @@ from .agents.technical import TechnicalAgent
 from .brokers.base import Broker
 from .config import Settings
 from .contracts import AgentSignal, AssetState, MarketSnapshot, utcnow
+from .data.news_sources import NewsHub
 from .data.providers import MarketDataProvider
 from .guardrails import PortfolioState
 from .journal import Journal, start_of_utc_day
 from .learning import update_agent_weights
 from .llm import LLMClient
+from .strategies import setup_context
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +65,8 @@ class Pipeline:
         ctx = AgentContext(settings, llm, journal)
         self.market = MarketDataAgent(ctx, provider)
         self.signal_agents = [TechnicalAgent(ctx), QuantAgent(ctx), NewsAgent(ctx), FlowAgent(ctx),
-                              FundamentalAgent(ctx), ReplicationAgent(ctx)]
+                              FundamentalAgent(ctx)]
+        self.replication = ReplicationAgent(ctx, provider)   # runs after the others: it reads their votes
         self.orchestrator = Orchestrator(ctx)
         self.backtester = BacktestAgent(ctx)
         self.risk = RiskAgent(ctx)
@@ -73,13 +76,31 @@ class Pipeline:
         self.post_trade = PostTradeAgent(ctx)
         self.paper = PaperTradingAgent(ctx)
         self._history: dict[str, tuple[datetime, pd.DataFrame]] = {}
+        self._last_snapshot: MarketSnapshot | None = None
+        news_provider = provider if hasattr(provider, "news") else None
+        self.news_hub = NewsHub(settings.news, news_provider, journal, daily_budget_usd=settings.llm.daily_budget_usd)
 
     # ------------------------------------------------------------ helpers
     def portfolio_state(self) -> PortfolioState:
+        """Equity/cash the bot may use. With `allocated_capital_usd` set, this is a virtual sub-account:
+        allocation + realized P&L + open positions marked at the bid, never more than the broker really has."""
         acct = self.broker.account()
-        day_start = self.journal.equity_at_or_after(start_of_utc_day()) or acct.equity
-        return PortfolioState(equity=acct.equity, cash=acct.cash, open_trades=self.journal.open_trades(),
-                              day_start_equity=day_start)
+        open_trades = self.journal.open_trades()
+        equity, cash = acct.equity, acct.cash
+        cap = self.s.allocated_capital_usd
+        if cap:
+            realized = self.journal.realized_pnl_total(self.s.mode)
+            cost = sum(t.entry * t.position_size + t.fees_usd for t in open_trades)
+            mark = sum(self._mark(t) * t.position_size for t in open_trades)
+            v_cash = cap + realized - cost
+            equity = min(acct.equity, v_cash + mark)
+            cash = max(0.0, min(acct.cash, v_cash))
+        day_start = self.journal.equity_at_or_after(start_of_utc_day()) or equity
+        return PortfolioState(equity=equity, cash=cash, open_trades=open_trades, day_start_equity=day_start)
+
+    def _mark(self, trade) -> float:
+        st = self._last_snapshot.assets.get(trade.asset) if self._last_snapshot else None
+        return st.bid if st else trade.entry
 
     def history(self, asset: str) -> pd.DataFrame:
         """~14 days of bars for the Quant agent, refreshed hourly."""
@@ -92,8 +113,12 @@ class Pipeline:
         return df
 
     def gather_signals(self, st: AssetState, snap: MarketSnapshot) -> list[AgentSignal]:
-        inputs = {"bars": snap.bars.get(st.asset), "news": snap.news.get(st.asset, []),
-                  "history": self.history(st.asset)}
+        try:
+            news = snap.news.get(st.asset) or self.news_hub.for_asset(st.asset)
+        except Exception as e:
+            log.warning("news failed for %s: %s", st.asset, e)
+            news = []
+        inputs = {"bars": snap.bars.get(st.asset), "news": news, "history": self.history(st.asset)}
         with ThreadPoolExecutor(max_workers=len(self.signal_agents)) as pool:
             futures = [pool.submit(a.analyze, st, **inputs) for a in self.signal_agents]
             out = []
@@ -103,6 +128,11 @@ class Pipeline:
                 except Exception as e:
                     log.exception("agent %s failed", agent.name)
                     out.append(agent.abstain(st.asset, f"error: {e}"))
+        try:
+            out.append(self.replication.analyze(st, signals=list(out), **inputs))
+        except Exception as e:
+            log.exception("replication agent failed")
+            out.append(self.replication.abstain(st.asset, f"error: {e}"))
         return out
 
     def _close(self, trade, reason: str, ref_price: float, report: CycleReport) -> None:
@@ -153,6 +183,7 @@ class Pipeline:
             self.backtester.validate(self.provider)
 
         snap = self.market.snapshot()
+        self._last_snapshot = snap
         self.broker.on_market(snap)
         report.scanned = len(snap.assets)
         self.manage_positions(snap, report)
@@ -178,7 +209,7 @@ class Pipeline:
             if asset in held_assets:
                 report.skipped[asset] = "already held"
                 continue
-            tradeable = {s: validated[s] for s in st.active_setups if s in validated}
+            tradeable = {s: validated[s] | setup_context(s) for s in st.active_setups if s in validated}
             if not tradeable:   # cost gate: no LLM spend without a validated setup firing
                 report.skipped[asset] = "no validated setup active" if st.active_setups else "no setup"
                 continue
@@ -212,7 +243,7 @@ class Pipeline:
             if not plan.approved:
                 report.skipped[st.asset] = "re-check: " + "; ".join(plan.reasons[-1:])
                 continue
-            rec = self.execution.enter(plan, st)
+            rec = self.execution.enter(plan, st, fresh.equity)
             if rec:
                 report.opened.append(f"{rec.asset} {rec.position_size:.6f} @ {rec.entry:.4f}")
         if self.s.mode == "paper":

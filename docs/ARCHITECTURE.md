@@ -15,7 +15,8 @@
         ┌──────────────────────────────────────────────────┐
         │              INTELLIGENCE LAYER (parallel)        │
         │ 📊 Technical  📈 Quant  📰 News  🐋 Flow           │
-        │ 🏦 Fundamental (off)   👀 Replication (off)        │
+        │ 🏦 Fundamental (off) → then 👀 Replication         │
+        │ (reads the others' votes + track records)         │
         └──────────────────────┬───────────────────────────┘
                                ↓  weighted vote ≥ prefilter
                  ┌────────────────────────────┐
@@ -66,6 +67,7 @@
 | `src/tradebot/agents/*.py` | The 15 agents |
 | `src/tradebot/brokers/` | `AlpacaBroker` (paper/live), `SimulatedBroker` |
 | `src/tradebot/data/providers.py` | `AlpacaProvider`, `SyntheticProvider` |
+| `src/tradebot/data/news_sources.py` | `NewsHub`: Alpaca, RSS, Reddit, X (capped, budgeted), CryptoPanic |
 
 ## Models (Option 3: Opus orchestrates, cheaper sub-agents)
 
@@ -74,7 +76,9 @@
 | Orchestrator | claude-opus-5-5 | high |
 | Quant, Fundamental, Replication, Portfolio | claude-sonnet-5-5 | low |
 | Risk, Post-Trade | claude-sonnet-5-5 | medium |
-| Market Data, News, Technical, Flow, Execution, Kill-Switch, Backtest review | claude-haiku-4-5 | n/a |
+| Market Data*, News, Technical, Flow, Execution, Kill-Switch*, Backtest review | claude-haiku-4-5 | n/a |
+
+\* per-cycle reviews are disabled in the $500 profile (fixed daily cost); deterministic checks still run.
 
 Opus 5.5 and Sonnet 5.5 calls send `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`), so a
 safety-classifier refusal is retried server-side on a fallback model instead of failing the call.

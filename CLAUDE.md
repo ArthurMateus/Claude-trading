@@ -16,11 +16,17 @@ Read before non-trivial work: `docs/ASSESSMENT.md` (why the design looks like th
 - Max 5–8 open positions (cap 8); portfolio heat cap 6% of equity; correlated assets count as one cluster.
 - LLM architecture "Option 3": Opus 5.5 orchestrates, Haiku 4.5 / Sonnet 5.5 run the sub-agents; hard limits stay in code.
 - Python 3.11 + SQLite.
+- **$500 paper account** (`allocated_capital_usd: 500`: the bot trades a virtual $500 sub-account even if the
+  Alpaca paper account holds more). LLM budget $2/day; per-cycle LLM reviews (market data, kill-switch) off.
+- No personal setups: trade a **diverse setup library** (8 setups in `strategies.py`), each gated by the backtest.
+- News: free sources (Alpaca/Benzinga, RSS, Reddit) + opt-in X/Twitter (capped, charged to the budget) + CryptoPanic.
+- Replication follows the system's own hot agents and setup momentum; external traders only after earning trust.
+- Runs on the user's **local machine** (`docs/LOCAL_SETUP.md`, `scripts/`, `deploy/`).
 
 ## The pipeline (one cycle every 5 min — `src/tradebot/pipeline.py`)
 Market Data → manage open positions (stop / take-profit / time-stop; closed → Post-Trade → learning) →
-Kill-Switch → for each asset where a **backtest-validated setup is firing**: Technical, Quant, News, Flow,
-Fundamental, Replication in parallel → Orchestrator fusion (Opus, only if weighted vote ≥ prefilter) →
+Kill-Switch → for each asset where a **backtest-validated setup is firing**: Technical, Quant, News (NewsHub),
+Flow, Fundamental in parallel, then Replication (reads their votes) → Orchestrator fusion (Opus, only if weighted vote ≥ prefilter) →
 Risk (LLM proposal + `guardrails.check_trade`) → Portfolio (subset/order) → guardrails re-check →
 Execution (IOC marketable limit + resting stop at broker) → Journal. Paper mode: Paper-Trading Agent updates
 the promotion verdict.
@@ -29,13 +35,13 @@ the promotion verdict.
 | Agent | File | Model | Output |
 |---|---|---|---|
 | 🧠 Orchestrator | orchestrator.py | opus-5-5 (high) | TradeCandidate (setup, confidence=P(TP before stop), reason) |
-| 📡 Market Data | market_data.py | haiku-4-5 (1 call/cycle, may only flag data bad) | MarketSnapshot of AssetState |
-| 📰 News | news.py | haiku-4-5 | sentiment signal + event_risk none/low/high |
+| 📡 Market Data | market_data.py | haiku-4-5 (optional 1 call/cycle, off; may only flag data bad) | MarketSnapshot of AssetState |
+| 📰 News | news.py + ../data/news_sources.py | haiku-4-5 | sentiment + event_risk; sources: Alpaca, RSS, Reddit, X (opt-in, capped), CryptoPanic |
 | 📊 Technical | technical.py | haiku-4-5 | technical signal |
 | 📈 Quant | quant.py | sonnet-5-5 (low) | probability + expected return (stats computed in code) |
 | 🏦 Fundamental | fundamental.py | sonnet-5-5 (low) | **disabled** — no data source |
 | 🐋 Flow | flow.py | haiku-4-5 | order-book/volume flow signal |
-| 👀 Replication | replication.py | sonnet-5-5 (low) | **disabled** — reads data/replication_feed.json |
+| 👀 Replication | replication.py | sonnet-5-5 (low) | follows hot internal agents + setup momentum + earned external sources |
 | 🔬 Backtest | backtest_agent.py + ../backtest.py | haiku-4-5 (veto only) | validated setups (state `setup_validation`) |
 | 🧪 Paper-Trading | paper_trading.py | none | PROMOTE / CONTINUE / FAIL (state `promotion`) |
 | ⚠️ Risk | risk.py + ../guardrails.py | sonnet-5-5 (medium) | RiskPlan APPROVE/REJECT, qty, stop, TP |
@@ -66,16 +72,18 @@ Models/effort per role live in `config/settings.yaml → llm`. `src/tradebot/llm
 
 ## Commands
 ```bash
+bash scripts/setup_local.sh                 # local venv + install + tests (Windows: scripts\setup_local.ps1)
 pip install -e ".[dev]"                     # or: pip install anthropic alpaca-py pydantic pyyaml pandas numpy pytest
 python3 -m pytest -q                        # must stay green; no network, no API spend
 tradebot --mode simulated --offline validate   # backtest gate on synthetic data
 tradebot --mode simulated --offline cycle      # one offline cycle
 tradebot validate && tradebot cycle            # paper, real Alpaca data + Claude (needs .env)
-tradebot run                                   # loop forever (paper)
+tradebot run                                   # loop forever (paper); scripts/run_local.sh adds --log-file
 tradebot report | tradebot export data/trades.csv | tradebot reset-halt
 ```
 Without installing: `PYTHONPATH=src python3 -m tradebot.cli ...`. Secrets come from `.env` (see `.env.example`):
-`ANTHROPIC_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`.
+`ANTHROPIC_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, optional `X_BEARER_TOKEN`, `CRYPTOPANIC_TOKEN`.
+Tests must never touch the network: the `settings` fixture disables RSS/Reddit/X; inject `fetch=` for news tests.
 
 ## Trade journal
 SQLite at `data/journal.sqlite` (git-ignored). `trades` stores the user-requested fields: timestamp, asset,
@@ -91,8 +99,11 @@ Also: `decisions` (every candidate + rejection reason), `events`, `equity`, `llm
 - Keep comments sparse and purposeful; match surrounding style; add tests with every behavior change.
 
 ## Current status (2026-10-06)
-- v0.1 complete: all 15 agents, pipeline, guardrails, journal, backtester, Alpaca + simulated brokers, CLI, 24 tests green.
-- Not yet done: first real Alpaca paper run (adapter untested against the live API), Fundamental/Replication data
-  sources, derivatives flow data, alerts/notifications, deployment host. The three starter setups FAIL the
-  gate on random data after fees; real edge must come from better setups (ask the user for theirs).
-- Next steps: answer `docs/OPEN_QUESTIONS.md`, run `tradebot validate` on real Alpaca data, start the paper loop.
+- v0.2: all 15 agents, 8-setup library, multi-source news, replication of internal agents/setups with an
+  earned-trust gate for external sources, $500 virtual sub-account, lean LLM cost profile, local deployment
+  scripts. 36 offline tests green.
+- Not yet verified: the Alpaca adapter and live news feeds against the real APIs (the build sandbox blocked
+  those hosts). The first supervised `tradebot validate` + `tradebot cycle` on the user's machine is the test.
+- Open: alerts channel, budget vs a $500 account, derivatives flow data (see `docs/OPEN_QUESTIONS.md`).
+- Next steps: user runs `scripts/setup_local.sh`, fills `.env`, runs `tradebot validate` and one supervised
+  `tradebot cycle`; fix whatever the real APIs reveal; then `scripts/run_local.sh` for the paper period.

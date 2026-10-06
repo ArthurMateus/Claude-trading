@@ -36,11 +36,14 @@ def build(args) -> Pipeline:
         s.broker = "simulated"
         if not os.environ.get("ALPACA_API_KEY"):
             s.data_provider = "synthetic"
+    if s.data_provider == "synthetic":   # real-world news about synthetic prices would be meaningless
+        s.news.rss_feeds, s.news.reddit_subreddits = [], []
+        s.news.x_enabled = s.news.cryptopanic_enabled = False
     journal = Journal(s.journal_path)
     llm = LLMClient(s.llm, journal, offline=args.offline)
     provider = make_provider(s.data_provider)
     if s.broker == "simulated":
-        broker = SimulatedBroker(10_000, s.costs.taker_fee_bps, s.costs.sim_slippage_bps)
+        broker = SimulatedBroker(s.allocated_capital_usd or 10_000, s.costs.taker_fee_bps, s.costs.sim_slippage_bps)
     else:
         from .brokers.alpaca import AlpacaBroker
         if s.mode == "live":
@@ -76,6 +79,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--offline", action="store_true", help="no LLM calls; agents use deterministic heuristics")
     ap.add_argument("--mode", choices=["simulated", "paper", "live"])
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--log-file", help="also write logs here (rotated at 10 MB, 5 files kept)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("validate")
     sub.add_parser("cycle")
@@ -85,7 +89,12 @@ def main(argv: list[str] | None = None) -> None:
     ex = sub.add_parser("export")
     ex.add_argument("path", nargs="?", default="data/trades.csv")
     args = ap.parse_args(argv)
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if args.log_file:
+        from logging.handlers import RotatingFileHandler
+        os.makedirs(os.path.dirname(os.path.abspath(args.log_file)), exist_ok=True)
+        handlers.append(RotatingFileHandler(args.log_file, maxBytes=10_000_000, backupCount=5))
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, handlers=handlers,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     p = build(args)
     if args.cmd == "validate":

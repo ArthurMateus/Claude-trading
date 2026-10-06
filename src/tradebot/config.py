@@ -70,6 +70,34 @@ class PromotionConfig(BaseModel):
     max_slippage_vs_model_bps: float = 10
 
 
+class NewsConfig(BaseModel):
+    lookback_hours: float = 6
+    refresh_minutes: int = 5
+    rss_feeds: list[str] = ["coindesk", "cointelegraph", "decrypt"]
+    reddit_subreddits: list[str] = ["CryptoCurrency", "Bitcoin", "ethereum", "solana"]
+    x_enabled: bool = True              # only active when X_BEARER_TOKEN is set
+    x_max_posts_per_day: int = 100      # pay-per-use ~$0.005/post => at most ~$0.50/day
+    x_posts_per_query: int = 10
+    cryptopanic_enabled: bool = True    # only active when CRYPTOPANIC_TOKEN is set
+    cryptopanic_url: str = "https://cryptopanic.com/api/developer/v2/posts/"
+    asset_keywords: dict[str, list[str]] = Field(default_factory=lambda: {
+        "BTC/USD": ["bitcoin", "BTC"], "ETH/USD": ["ethereum", "ether", "ETH"], "SOL/USD": ["solana", "SOL"],
+        "LTC/USD": ["litecoin", "LTC"], "LINK/USD": ["chainlink", "LINK"], "AVAX/USD": ["avalanche", "AVAX"],
+        "DOGE/USD": ["dogecoin", "DOGE"]})
+
+
+class ReplicationConfig(BaseModel):
+    follow_internal_agents: bool = True
+    lookback_trades: int = 30
+    min_agent_observations: int = 10
+    hot_hit_rate: float = 0.55
+    external_feed: str = "data/replication_feed.json"
+    external_horizon_minutes: int = 120
+    external_min_actions: int = 20
+    external_min_hit_rate: float = 0.55
+    external_min_avg_return_pct: float = 0.5   # must beat a round trip of fees + slippage
+
+
 class ModelConfig(BaseModel):
     model: str
     effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
@@ -79,6 +107,7 @@ class ModelConfig(BaseModel):
 class LLMConfig(BaseModel):
     daily_budget_usd: float = 15.0
     prefilter_min_abs_score: float = 0.15
+    market_data_review: bool = True     # one cheap call per cycle; a fixed daily cost
     orchestrator: ModelConfig = ModelConfig(model="claude-opus-5-5", effort="high", max_tokens=16000)
     agents: dict[str, ModelConfig] = Field(default_factory=dict)
 
@@ -93,6 +122,7 @@ class Settings(BaseModel):
     broker: Literal["alpaca", "simulated"] = "alpaca"
     data_provider: Literal["alpaca", "synthetic"] = "alpaca"
     journal_path: str = "data/journal.sqlite"
+    allocated_capital_usd: Optional[float] = None   # trade a virtual sub-account of this size (None = whole account)
     universe: list[str] = ["BTC/USD", "ETH/USD"]
     cycle_interval_seconds: int = 300
     bar_timeframe_minutes: int = 5
@@ -105,6 +135,8 @@ class Settings(BaseModel):
     validation: ValidationConfig = ValidationConfig()
     promotion: PromotionConfig = PromotionConfig()
     llm: LLMConfig = LLMConfig()
+    news: NewsConfig = NewsConfig()
+    replication: ReplicationConfig = ReplicationConfig()
     fusion_weights: dict[str, float] = Field(default_factory=dict)
     agents_enabled: dict[str, bool] = Field(default_factory=dict)
 
@@ -121,7 +153,9 @@ def load_dotenv(path: Path = ROOT / ".env") -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        value = value.split(" #", 1)[0].strip().strip('"').strip("'")   # allow trailing comments
+        if value:
+            os.environ.setdefault(key.strip(), value)
 
 
 def load_settings(path: Path | str | None = None) -> Settings:

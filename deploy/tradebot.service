@@ -1,0 +1,19 @@
+# systemd user service (Linux). Install:
+#   mkdir -p ~/.config/systemd/user && cp deploy/tradebot.service ~/.config/systemd/user/
+#   edit WorkingDirectory below, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now tradebot
+#   loginctl enable-linger "$USER"     # keep running after you log out
+#   journalctl --user -u tradebot -f   # follow logs
+[Unit]
+Description=tradebot paper-trading loop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/Claude-trading
+ExecStart=%h/Claude-trading/.venv/bin/tradebot --log-file data/tradebot.log run
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

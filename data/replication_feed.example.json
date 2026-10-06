@@ -1,0 +1,6 @@
+[
+  {"source": "trader:@example_handle", "asset": "BTC/USD", "action": "buy", "ts": "2026-10-06T13:45:00Z",
+   "size_usd": 50000, "note": "public post: long BTC"},
+  {"source": "wallet:0xabc...", "asset": "ETH/USD", "action": "sell", "ts": "2026-10-06T14:10:00Z",
+   "size_usd": 1200000, "note": "on-chain transfer to exchange"}
+]

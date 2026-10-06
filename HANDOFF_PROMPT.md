@@ -10,8 +10,8 @@ Repo: https://github.com/ArthurMateus/Claude-trading
 Branch with the v0.1 build: claude/trusting-noether-rb2slp (merge it to main first or keep working on it).
 
 Start by reading, in this order: CLAUDE.md, docs/ASSESSMENT.md, docs/ARCHITECTURE.md, docs/AGENTS.md,
-docs/SDLC.md, docs/OPEN_QUESTIONS.md. Then run:
-  pip install -e ".[dev]" && python3 -m pytest -q          (24 tests must pass, offline)
+docs/SDLC.md, docs/OPEN_QUESTIONS.md, docs/LOCAL_SETUP.md. Then run:
+  bash scripts/setup_local.sh                               (36 tests must pass, offline)
   tradebot --mode simulated --offline cycle                 (offline smoke run)
 
 WHAT IT IS
@@ -33,6 +33,13 @@ DECISIONS I ALREADY MADE (don't re-ask)
 - LLM "Option 3": Opus 5.5 orchestrator; cheaper models (Haiku 4.5 / Sonnet 5.5) for every sub-agent. Hard
   limits stay in code; LLMs can only make safety decisions stricter.
 - Holding period: minutes to max 4 hours. Spot, long-only (Alpaca crypto can't short).
+- Account: $500 for paper (allocated_capital_usd: 500). LLM budget $2/day; per-cycle LLM reviews off.
+- No personal setups: use the diverse 8-setup library; every setup must pass the backtest gate on real data.
+- News: free sources (Alpaca/Benzinga, CoinDesk/Cointelegraph/Decrypt RSS, Reddit) + X/Twitter opt-in via
+  X_BEARER_TOKEN (capped 100 posts/day, charged to the daily budget) + CryptoPanic opt-in.
+- Replication agent follows the system's own best-performing agents and setups; external traders/strategies
+  only count after their past calls are scored and clear the trust thresholds.
+- Fundamental agent stays disabled. Hosting: my local machine.
 
 AFTER EVERY TRADE THE JOURNAL STORES
 Timestamp, Asset, Entry, Exit, Position size, Agents that agreed, Agents that disagreed, Confidence, Reason for
@@ -47,17 +54,15 @@ RULES FOR YOU
 - Ask me before deciding anything listed in docs/OPEN_QUESTIONS.md.
 
 CURRENT STATUS
-- v0.1 complete and tested offline. NOT yet done: first real Alpaca paper run (the Alpaca adapter is untested
-  against the live API), data sources for the Fundamental / Replication / derivatives-flow agents, alerts, and
-  a 24/7 host.
-- The 3 starter setups (momentum_breakout, mean_reversion, trend_pullback) FAIL the backtest gate on
-  random-walk data once fees are included. Real profitability depends on better setups validated on real data.
+- v0.2 complete and tested offline (36 tests). NOT yet verified against real APIs: the Alpaca adapter and the
+  live news feeds (the build sandbox blocked those hosts). Not built yet: alerts, derivatives flow data.
+- On random-walk data every setup fails the backtest gate once fees are included (as it should). Real
+  profitability depends on setups that pass on real Alpaca history.
 
 NEXT STEPS
-1. Ask me the top open questions in docs/OPEN_QUESTIONS.md (account size, alerts, hosting, news/flow data
-   sources, which traders to replicate, my own setup ideas).
-2. With my Alpaca paper keys in .env: run `tradebot validate` on real history and report with the
-   backtest-gate skill.
-3. Do one supervised `tradebot cycle` in paper mode, fix anything in the Alpaca adapter, then start `tradebot run`.
-4. Weekly: run the weekly-review skill and propose changes as PRs.
+1. Help me through docs/LOCAL_SETUP.md on my machine (venv, .env, Alpaca paper reset to $500).
+2. Run `tradebot validate` on real history and report with the backtest-gate skill.
+3. Do one supervised `tradebot cycle`; fix anything the real Alpaca/news APIs reveal; then scripts/run_local.sh.
+4. Ask me the remaining items in docs/OPEN_QUESTIONS.md (alerts channel first).
+5. Weekly: run the weekly-review skill and propose changes as PRs.
 ```

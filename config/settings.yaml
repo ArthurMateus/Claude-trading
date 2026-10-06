@@ -6,6 +6,9 @@ mode: paper                  # simulated | paper | live
 broker: alpaca               # alpaca | simulated
 data_provider: alpaca        # alpaca | synthetic
 journal_path: data/journal.sqlite
+allocated_capital_usd: 500   # the bot sizes, tracks P&L and drawdown on this amount only. Alpaca paper accounts
+                             # start at $100k: the bot still behaves as if it had $500 (you can also reset the
+                             # paper balance to $500 in the Alpaca dashboard).
 
 universe:                    # Alpaca crypto pairs (spot, long-only, no margin)
   - BTC/USD
@@ -52,7 +55,8 @@ kill_switch:
   max_api_errors_per_hour: 10
   max_avg_slippage_bps: 30   # rolling mean over last 5 fills
   max_orders_per_hour: 30
-  llm_review: true           # a cheap model may ESCALATE (never relax) to pause entries
+  llm_review: false          # cheap-model review that may only ESCALATE to pause entries. Off for the $500
+                             # account: it is a fixed ~$0.40/day cost; deterministic checks still run.
 
 costs:                       # used by the simulator and the backtester; check Alpaca's current fee tier
   taker_fee_bps: 25
@@ -75,8 +79,10 @@ promotion:                   # Paper-Trading gate before any live capital
   max_slippage_vs_model_bps: 10
 
 llm:
-  daily_budget_usd: 15.0     # spend above this => LLM calls stop, agents abstain, no new entries
+  daily_budget_usd: 2.0      # spend above this => LLM calls stop, agents abstain, no new entries.
+                             # $2/day = ~$60/month = 12% of a $500 account; raise only when results justify it.
   prefilter_min_abs_score: 0.15  # Opus is only consulted when the cheap agents agree at least this much
+  market_data_review: false  # per-cycle Haiku data/regime review (~$1.7/day fixed); off for the $500 account
   orchestrator: {model: claude-opus-5-5, effort: high, max_tokens: 16000}
   agents:                    # Option 3: Opus orchestrates, cheaper models run every sub-agent
     market_data: {model: claude-haiku-4-5, max_tokens: 2000}
@@ -92,6 +98,27 @@ llm:
     kill_switch: {model: claude-haiku-4-5, max_tokens: 1500}
     post_trade:  {model: claude-sonnet-5-5, effort: medium, max_tokens: 6000}
 
+news:                        # News Agent sources (see src/tradebot/data/news_sources.py)
+  lookback_hours: 6
+  refresh_minutes: 5         # RSS/Reddit are fetched at most this often, shared by all assets
+  rss_feeds: [coindesk, cointelegraph, decrypt]           # free
+  reddit_subreddits: [CryptoCurrency, Bitcoin, ethereum, solana]   # free public JSON
+  x_enabled: true            # X/Twitter: active only if X_BEARER_TOKEN is in .env. Pay-per-use ~$0.005/post,
+  x_max_posts_per_day: 100   # hard cap => max ~$0.50/day, counted in the llm daily budget.
+  x_posts_per_query: 10      # only queried for assets that already have a validated setup firing
+  cryptopanic_enabled: true  # active only if CRYPTOPANIC_TOKEN is in .env
+
+replication:                 # Strategy-Replication Agent: follow what has been working
+  follow_internal_agents: true   # replicate the system's own agents with the best recent hit rate
+  lookback_trades: 30
+  min_agent_observations: 10
+  hot_hit_rate: 0.55
+  external_feed: data/replication_feed.json   # optional external traders/strategies (see docs/AGENTS.md)
+  external_horizon_minutes: 120               # each external action is scored on the next 2h price move
+  external_min_actions: 20                    # a source must earn trust before it counts at all:
+  external_min_hit_rate: 0.55                 #   >= 20 scored actions, >= 55% right,
+  external_min_avg_return_pct: 0.5            #   and >= 0.5% average move (beats fees)
+
 fusion_weights:              # starting trust per agent; the learning loop adjusts within [0.25, 2.0]
   technical: 1.0
   quant: 1.0
@@ -102,4 +129,4 @@ fusion_weights:              # starting trust per agent; the learning loop adjus
 
 agents_enabled:
   fundamental: false         # no crypto fundamentals source configured yet (see OPEN_QUESTIONS)
-  replication: false         # no traders/strategies selected yet (see OPEN_QUESTIONS)
+  replication: true          # follows internal agents/setups; external sources only once they earn trust

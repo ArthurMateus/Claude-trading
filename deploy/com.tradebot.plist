@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- macOS launchd agent. Replace /Users/YOU/Claude-trading below, then:
+       cp deploy/com.tradebot.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/com.tradebot.plist
+     Stop: launchctl unload ~/Library/LaunchAgents/com.tradebot.plist
+     Keep the Mac awake while trading: System Settings > Energy, or run `caffeinate -s` -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.tradebot</string>
+  <key>WorkingDirectory</key><string>/Users/YOU/Claude-trading</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOU/Claude-trading/.venv/bin/tradebot</string>
+    <string>--log-file</string><string>data/tradebot.log</string>
+    <string>run</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>30</integer>
+</dict>
+</plist>

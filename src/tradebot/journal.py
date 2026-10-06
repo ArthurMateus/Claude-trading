@@ -175,6 +175,13 @@ class Journal:
                       (since.isoformat(),))
         return float(r[0])
 
+    def realized_pnl_total(self, mode: Optional[str] = None) -> float:
+        q, args = "SELECT COALESCE(SUM(pnl_usd), 0) FROM trades WHERE status='CLOSED'", []
+        if mode:
+            q += " AND mode = ?"
+            args.append(mode)
+        return float(self._one(q, args)[0])
+
     def export_csv(self, path: str | Path) -> int:
         rows = self._all("SELECT * FROM trades ORDER BY timestamp")
         with open(path, "w", newline="") as f:

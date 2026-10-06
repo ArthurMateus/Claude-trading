@@ -31,6 +31,8 @@ class NewsItem(BaseModel):
     summary: str = ""
     symbols: list[str] = Field(default_factory=list)
     source: str = ""
+    kind: Literal["news", "social"] = "news"
+    engagement: float = 0.0            # likes/score/votes for social items
 
 
 class AssetState(BaseModel):

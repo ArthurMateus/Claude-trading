@@ -16,6 +16,8 @@ def settings() -> Settings:
     s.broker = "simulated"
     s.data_provider = "synthetic"
     s.journal_path = ":memory:"
+    s.news.rss_feeds, s.news.reddit_subreddits = [], []     # tests never touch the network
+    s.news.x_enabled = s.news.cryptopanic_enabled = False
     return s
 
 

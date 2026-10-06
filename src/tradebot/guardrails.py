@@ -155,8 +155,9 @@ def check_trade(*, asset: str, side: str, confidence: float, entry: float, stop:
     risk_usd = state.equity * risk_pct / 100
     qty = risk_usd / stop_dist
     max_notional = min(state.equity * risk.max_position_notional_pct / 100, state.cash * 0.98)
-    if qty * entry > max_notional:
-        qty = max_notional / entry
+    worst_fill = entry * (1 + risk.max_entry_slippage_bps / 1e4)   # caps must hold at the worst allowed fill
+    if qty * worst_fill > max_notional:
+        qty = max_notional / worst_fill
         reasons.append(f"size capped by notional/cash limit ({max_notional:.2f} USD)")
     qty = math.floor(qty / qty_step) * qty_step
     if qty * entry < risk.min_order_notional_usd:

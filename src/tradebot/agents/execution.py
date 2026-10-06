@@ -30,7 +30,7 @@ class ExecutionAgent(Agent):
         super().__init__(ctx)
         self.broker = broker
 
-    def enter(self, plan: RiskPlan, state: AssetState) -> TradeRecord | None:
+    def enter(self, plan: RiskPlan, state: AssetState, equity: float) -> TradeRecord | None:
         cap = self.settings.risk.max_entry_slippage_bps
         cand = plan.candidate
         payload = {"asset": cand.asset, "side": cand.side, "qty": plan.quantity, "bid": state.bid, "ask": state.ask,
@@ -81,7 +81,7 @@ class ExecutionAgent(Agent):
         rec = TradeRecord(
             trade_id=trade_id, timestamp=utcnow(), asset=cand.asset, side=cand.side, setup=cand.setup,
             mode=self.settings.mode, entry=fill, position_size=qty, notional_usd=qty * fill,
-            risk_pct=qty * dist / max(1e-9, self.broker.account().equity) * 100, risk_usd=qty * dist,
+            risk_pct=qty * dist / max(1e-9, equity) * 100, risk_usd=qty * dist,
             stop_price=stop, take_profit_price=tp, decision_price=cand.decision_price,
             agents_agreed=cand.agents_agreed, agents_disagreed=cand.agents_disagreed,
             agent_signals=[s.model_dump(exclude={"data"}) for s in cand.signals],

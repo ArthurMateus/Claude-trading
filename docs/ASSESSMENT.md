@@ -45,15 +45,20 @@ know whether you have an edge. Nobody can promise one.
 6. **Alpaca crypto is long-only** and has no bracket orders. → `allow_short: false`. A resting stop order is
    placed at the broker the moment an entry fills, so the stop survives a crash of the bot. Take-profit and
    time-stop exits are managed every cycle.
-7. **LLM cost can exceed the profit.** Calling every agent on every asset every 5 minutes costs about $50/day.
-   → The intelligence layer and Opus only run when a **validated setup fires**. A **daily LLM budget** ($15) is
-   also enforced. Expect roughly $5–12/day, so on a $10k account the bot must make about 1.5–3.5% a month
-   just to cover LLM costs. Account size matters (see OPEN_QUESTIONS).
+7. **LLM cost can exceed the profit, especially on a $500 account.** Calling every agent on every asset every
+   5 minutes costs about $50/day. → The intelligence layer and Opus only run when a **validated setup fires**,
+   per-cycle reviews are off, and the daily budget is **$2** (X/Twitter reads count against it too). Even so,
+   $60/month is 12% of $500, so the LLM layer cannot pay for itself at this size. Treat the paper period as a
+   paid experiment: the question is whether the LLM layer improves results over the free heuristics
+   (`--offline`). Scale capital only if it clearly does.
 8. **Prompt injection via news.** Headlines are untrusted text. → Prompts treat third-party text as data, and
    no LLM output can raise risk above the hard limits.
 9. **Agents with little value for crypto intraday.** Fundamental (no data source, and fundamentals rarely move
-   a 2-hour trade) and options-flow (no options data on Alpaca) are disabled or reduced to order-book flow until
-   a data source is chosen. Replication is disabled until you choose whom to follow.
+   a 2-hour trade) stays disabled, and options flow (no options data on Alpaca) is reduced to order-book flow.
+   Replication follows the system's own best-performing agents and setups. External traders count only after
+   their past calls are scored and clear a bar, because most public "alpha" is noise or marketing.
+10. **More setups means more chances of a lucky pass.** Eight setups are tested; each needs an out-of-sample
+    pass, and real paper results decide in the end.
 
 ## Is ~99% autonomy realistic?
 

@@ -41,7 +41,7 @@ class MarketDataAgent(Agent):
         super().__init__(ctx)
         self.provider = provider
 
-    def snapshot(self, with_news: bool = True) -> MarketSnapshot:
+    def snapshot(self, with_news: bool = False) -> MarketSnapshot:
         s = self.settings
         now = utcnow()
         assets: dict[str, AssetState] = {}
@@ -99,7 +99,7 @@ class MarketDataAgent(Agent):
         return issues
 
     def _review(self, snap: MarketSnapshot) -> None:
-        if not snap.assets or not self.llm.online:
+        if not snap.assets or not self.llm.online or not self.settings.llm.market_data_review:
             return
         payload = {"assets": [a.model_dump(include={"asset", "last", "spread_bps", "atr_pct", "realized_vol_pct",
                                                      "ret_1h_pct", "ret_24h_pct", "volume_z", "regime",

@@ -58,8 +58,26 @@ def test_cycle_runs_and_journals_trades(settings, monkeypatch):
         assert t.stop_order_id                       # every open trade has a resting protective stop
         assert t.risk_pct <= settings.risk.base_risk_pct + 1e-6   # nothing calibrated yet -> base risk
         assert t.reason and t.market_conditions and t.agent_signals
-    heat = sum(t.risk_usd for t in p.journal.open_trades()) / p.broker.account().equity * 100
+    heat = sum(t.risk_usd for t in p.journal.open_trades()) / p.portfolio_state().equity * 100
     assert heat <= settings.risk.max_portfolio_heat_pct + 1e-6
+
+
+def test_bot_trades_only_its_allocated_capital(settings, monkeypatch):
+    """Broker holds $10k (like an Alpaca paper account); the bot must size and account on its $500 only."""
+    fire_setups(monkeypatch, settings)
+    settings.allocated_capital_usd = 500
+    p = build(settings)
+    force_validate(p)
+    assert p.portfolio_state().equity == 500
+    p.run_cycle()
+    opened = p.journal.open_trades()
+    assert opened
+    cap = 500 * settings.risk.max_position_notional_pct / 100
+    assert all(t.notional_usd <= cap + 1e-6 for t in opened)
+    assert sum(t.notional_usd + t.fees_usd for t in opened) <= 500
+    st = p.portfolio_state()
+    assert st.cash <= 500 - sum(t.notional_usd for t in opened) + 1e-6
+    assert abs(st.equity - 500) < 10                # only spread/fees/marks moved it
 
 
 def test_hard_halt_blocks_entries_and_persists(settings):

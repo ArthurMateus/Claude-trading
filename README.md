@@ -7,16 +7,17 @@ journaled with its full reasoning, and every result feeds back into the system.
 > ⚠️ Experimental software. Nothing here is financial advice and no profitability is promised. Run it in paper
 > mode until the built-in promotion gate passes, then risk only money you can afford to lose.
 
-## Quick start
+## Quick start (local machine; full guide in [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md))
 ```bash
-pip install -e ".[dev]"
-python3 -m pytest -q                                   # 24 offline tests
+bash scripts/setup_local.sh        # venv, install, tests (Windows: scripts\setup_local.ps1)
+source .venv/bin/activate
+python3 -m pytest -q                                   # 36 offline tests
 tradebot --mode simulated --offline validate           # backtest gate on synthetic data
 tradebot --mode simulated --offline cycle              # one dry-run cycle, no API calls
 
 cp .env.example .env    # add ANTHROPIC_API_KEY, ALPACA_API_KEY, ALPACA_SECRET_KEY (paper keys)
 tradebot validate       # backtest gate on real Alpaca history
-tradebot run            # paper trading loop, one cycle every 5 minutes
+bash scripts/run_local.sh   # paper trading loop with logs in data/tradebot.log
 tradebot report         # P&L, validated setups, promotion verdict, LLM spend
 tradebot export data/trades.csv
 ```
@@ -26,6 +27,7 @@ tradebot export data/trades.csv
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): pipeline, principles, modules, models
 - [docs/AGENTS.md](docs/AGENTS.md): each agent's spec and the trade-journal fields
 - [docs/SDLC.md](docs/SDLC.md): agentic development and strategy-promotion lifecycle
-- [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md): decisions still needed from you
+- [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md): decisions made and still needed
+- [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md): install, run as a service, what happens when the PC sleeps
 - [CLAUDE.md](CLAUDE.md) and [.claude/](.claude): context and sub-agents for Claude Code
 - [HANDOFF_PROMPT.md](HANDOFF_PROMPT.md): paste into a new Claude session or account to continue

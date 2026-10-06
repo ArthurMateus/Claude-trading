@@ -57,3 +57,42 @@ def test_strict_schema_is_structured_output_compatible():
             for v in node:
                 walk(v)
     walk(sch)
+
+
+def test_no_setup_looks_ahead():
+    """A setup's value at bar k must be identical whether or not later bars exist."""
+    from tradebot.data.providers import SyntheticProvider
+    from tradebot.strategies import setup_signals
+
+    df = SyntheticProvider(seed=11).bars("BTC/USD", 5, limit=2500)
+    full = setup_signals(df)
+    for k in (400, 777, 1203, 1650, 2001, 2499):
+        part = setup_signals(df.iloc[:k])
+        assert (part.iloc[-1] == full.iloc[k - 1]).all(), (k, part.iloc[-1], full.iloc[k - 1])
+
+
+def test_every_setup_fires_somewhere_and_respects_max_hold():
+    from tradebot.config import load_settings
+    from tradebot.data.providers import SyntheticProvider
+    from tradebot.strategies import setup_signals
+
+    df = SyntheticProvider(seed=5).bars("ETH/USD", 5, limit=15000)
+    counts = setup_signals(df).sum()
+    assert (counts.drop("capitulation_reversal") > 0).all(), counts   # random walks have no sell climaxes
+    assert all(s.max_hold_bars > 0 and s.reward_risk >= 1.5 for s in SETUPS.values())
+    max_hold = load_settings().max_hold_minutes
+    assert all(s.max_hold_bars * 5 <= max_hold for s in SETUPS.values())
+
+
+def test_capitulation_reversal_fires_on_a_climax_bar():
+    n = 120
+    closes = np.linspace(110, 100, n)                      # steady decline -> low RSI
+    df = _bars(closes)
+    df["volume"] = 1.0 + np.random.default_rng(0).random(n) * 0.1
+    i = n - 1
+    df.iloc[i, df.columns.get_loc("open")] = 100.2
+    df.iloc[i, df.columns.get_loc("high")] = 100.4
+    df.iloc[i, df.columns.get_loc("low")] = 96.0            # long lower wick
+    df.iloc[i, df.columns.get_loc("close")] = 100.0         # closes in the upper half
+    df.iloc[i, df.columns.get_loc("volume")] = 50.0         # volume climax
+    assert bool(SETUPS["capitulation_reversal"].rule(df).iloc[-1])

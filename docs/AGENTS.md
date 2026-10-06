@@ -19,20 +19,42 @@ Each agent: **job → inputs → output → model → hard rules → status**. O
 - **Job:** fetch and clean bars, order book and news for the universe; compute features, regime and active setups.
 - **Output:** `MarketSnapshot` of `AssetState` (last, bid/ask, spread, ATR, vol, returns, volume z, book
   imbalance, regime, data issues, active setups) + correlation matrix.
-- **Model:** Haiku 4.5, one call per cycle reviewing the whole universe. It can only mark data as suspect or refine the regime label.
+- **Model:** Haiku 4.5, one optional call per cycle reviewing the whole universe (`llm.market_data_review`, off for
+  the $500 account because it's a fixed daily cost). It can only mark data as suspect or refine the regime label.
 - **Hard rules:** stale data (> 15 min), a crossed book, zero volume or a >15% bar jump marks the asset not tradable.
-- **Status:** implemented (Alpaca crypto + Benzinga news via Alpaca).
+- **Status:** implemented (Alpaca crypto bars + order book).
 
-## 📰 News Agent — `news.py`
-- **Job:** sentiment over recent headlines + event-risk flag (none/low/high).
-- **Output:** AgentSignal with `data.event_risk`, `data.key_events`.
-- **Model:** Haiku 4.5. Headlines are treated as data, never instructions.
+## 📰 News Agent — `news.py` + `data/news_sources.py`
+- **Job:** sentiment over recent newswire + social posts and an event-risk flag (none/low/high).
+- **Sources** (fetched only for assets where a validated setup fires):
+  - free: Alpaca (Benzinga newswire), RSS (CoinDesk, Cointelegraph, Decrypt), Reddit
+    (r/CryptoCurrency, r/Bitcoin, r/ethereum, r/solana)
+  - opt-in: **X/Twitter** (`X_BEARER_TOKEN`; pay-per-use ~$0.005/post, capped at 100 posts/day and charged
+    to the daily LLM budget), CryptoPanic (`CRYPTOPANIC_TOKEN`)
+  - LunarCrush (~$300/month API) and X's legacy $200/month tier are not worth it at this account size.
+- **Output:** AgentSignal with `data.event_risk`, `data.key_events`, `data.sources`.
+- **Model:** Haiku 4.5. Newswire is weighted above social; all third-party text is data, never instructions.
 - **Effect:** `event_risk: high` makes the Risk Agent request base risk only.
-- **Status:** implemented; single source (Alpaca/Benzinga).
+- **Status:** implemented and tested with fixtures. Live feeds have not been reached yet from a real network.
 
-## 📊 Technical Agent — `technical.py`
+## 📊 Technical Agent — `technical.py` + setup library `strategies.py`
 - **Job:** interpret indicators (EMA20/50, RSI, Bollinger, VWAP distance, ATR, volume z) and active setups.
 - **Model:** Haiku 4.5. **Status:** implemented.
+- **Setup library** (all long-only; each must pass the Backtest gate on its own before it can trade):
+
+  | Setup | Family | Designed for |
+  |---|---|---|
+  | momentum_breakout | breakout | trend_up, volatile |
+  | squeeze_breakout | volatility breakout | range → trend |
+  | session_range_breakout | session effect (US open range) | any, weekdays |
+  | trend_pullback | trend continuation | trend_up |
+  | ema_cross_trend | trend continuation | trend_up |
+  | vwap_reclaim | intraday reversion-to-trend | range, trend_up |
+  | mean_reversion | mean reversion | range |
+  | capitulation_reversal | climax reversal | volatile, trend_down |
+
+  The orchestrator sees each firing setup's description, intended regimes and backtest stats. Testing 8
+  setups raises the chance that one passes by luck, which is why the out-of-sample half must pass on its own.
 
 ## 📈 Quant Agent — `quant.py`
 - **Job:** probability + expected return. Code replays each active setup on ~14 days of this asset's bars
@@ -42,7 +64,8 @@ Each agent: **job → inputs → output → model → hard rules → status**. O
 
 ## 🏦 Fundamental Agent — `fundamental.py`
 - **Job:** tokenomics / unlocks / on-chain / valuation, mostly as a **veto** on a 1–4h horizon.
-- **Model:** Sonnet 5.5, effort low. **Status:** disabled, no data source yet.
+- **Model:** Sonnet 5.5, effort low. **Status:** disabled. No free source is good enough yet, and fundamentals
+  rarely move a 2h trade. Revisit after paper results.
 
 ## 🐋 Flow Agent — `flow.py`
 - **Job:** order-book depth imbalance, volume spikes, spread/liquidity → buying/selling pressure.
@@ -50,9 +73,16 @@ Each agent: **job → inputs → output → model → hard rules → status**. O
   liquidations, Deribit options) not yet connected.
 
 ## 👀 Strategy-Replication Agent — `replication.py`
-- **Job:** read actions of tracked traders/wallets/strategies from `data/replication_feed.json` and say whether
-  they are informative (size, recency, entering vs exiting).
-- **Model:** Sonnet 5.5, effort low. **Status:** disabled, no sources selected.
+- **Job:** follow whatever has been working. It runs after the other intelligence agents and reads their votes.
+  1. **Hot agents:** replicates the current votes of the system's own agents whose recent hit rate
+     (last 30 closed trades, ≥ 10 calls) is ≥ 55%, weighted by that edge. This is the fast counterpart to the
+     slow, bounded fusion weights.
+  2. **Setup momentum:** recent performance of the firing setups: live/paper journal (≥ 5 trades), else a
+     ~3-day replay on the asset vs its 14-day baseline.
+  3. **External traders/strategies (optional):** actions in `data/replication_feed.json`. Every past action is
+     scored on the next 2h price move; a source counts only after ≥ 20 scored actions, ≥ 55% hit rate and
+     ≥ 0.5% average move. Until then it's ignored.
+- **Model:** Sonnet 5.5, effort low. **Status:** enabled. It abstains until there's a track record.
 
 ## 🔬 Backtest Agent — `backtest_agent.py` + `backtest.py`
 - **Job:** validate each setup across the universe over `validation.lookback_days`, full sample **and**
