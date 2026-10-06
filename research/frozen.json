@@ -1,6 +1,6 @@
 {
  "contaminated": true,
- "prior_2026_views": 1,
+ "prior_2026_views": 2,
  "headline": {
   "cost_model": "alpaca_spot",
   "portfolio": "validated",
@@ -8,7 +8,7 @@
   "leverage": 1,
   "guardrails": true
  },
- "created_at": "2026-10-06T17:07:55.373823+00:00",
+ "created_at": "2026-10-06T18:03:07.802151+00:00",
  "train": [
   "2022-01-01",
   "2025-01-01"
@@ -56,7 +56,7 @@
    "slippage_overrides": []
   }
  },
- "source_sha256": "224ff0b4b6285956ace6d0c84e89a8a8b58d25c811b0ed01a8cb4146177c218e",
+ "source_sha256": "78fc4b07b28b8a59a7d222d8418991d6e92835a94730329af9ed385ad950974a",
  "champions": [
   {
    "id": "bb_reversion|long|240m|k=2.5,max_slope=0.01|stop3.0xATR,rr10.0,hold24h",
@@ -685,55 +685,55 @@
    "cost_model": "perp",
    "train": {
     "trades": 5513,
-    "win_rate": 0.325049882096862,
-    "profit_factor": 0.932065853615118,
-    "expectancy_bps": -7.592462529446295,
-    "tstat": -1.140288577506981,
+    "win_rate": 0.3255940504262652,
+    "profit_factor": 0.9374948839073188,
+    "expectancy_bps": -6.974621199861662,
+    "tstat": -1.0441595385217508,
     "positive_years": 1,
     "years": 3
    },
    "validation": {
     "trades": 1606,
-    "win_rate": 0.3107098381070984,
-    "profit_factor": 0.8585927869583826,
-    "expectancy_bps": -16.32429963541952,
-    "tstat": -1.338667907402746
+    "win_rate": 0.31133250311332505,
+    "profit_factor": 0.8663590865550989,
+    "expectancy_bps": -15.370562960450608,
+    "tstat": -1.25954801106813
    },
    "train_edge": false,
    "validated": false,
    "configs_tried": 48
   },
   {
-   "id": "bb_reversion|short|240m|k=2.5,max_slope=0.005|stop2.0xATR,rr3.0,hold24h",
+   "id": "bb_reversion|short|60m|k=2.0,max_slope=0.01|stop3.0xATR,rr10.0,hold24h",
    "family": "bb_reversion",
    "side": "short",
-   "tf": 240,
+   "tf": 60,
    "params": {
-    "k": 2.5,
-    "max_slope": 0.005
+    "k": 2.0,
+    "max_slope": 0.01
    },
    "exit": [
-    2.0,
     3.0,
+    10.0,
     24
    ],
    "live_ok": true,
    "cost_model": "perp",
    "train": {
-    "trades": 190,
-    "win_rate": 0.4263157894736842,
-    "profit_factor": 0.6725328705062963,
-    "expectancy_bps": -46.666313393573915,
-    "tstat": -1.68195025878129,
-    "positive_years": 1,
+    "trades": 2842,
+    "win_rate": 0.4549612948627727,
+    "profit_factor": 0.8999531208942307,
+    "expectancy_bps": -13.83091298034041,
+    "tstat": -1.3425124279216905,
+    "positive_years": 0,
     "years": 3
    },
    "validation": {
-    "trades": 83,
-    "win_rate": 0.4457831325301205,
-    "profit_factor": 0.7861809050660872,
-    "expectancy_bps": -33.86673192254317,
-    "tstat": -0.630233360689431
+    "trades": 909,
+    "win_rate": 0.46864686468646866,
+    "profit_factor": 1.0948834052289538,
+    "expectancy_bps": 12.403534587288076,
+    "tstat": 0.6361256569076398
    },
    "train_edge": false,
    "validated": false,
@@ -758,18 +758,18 @@
    "train": {
     "trades": 806,
     "win_rate": 0.36476426799007444,
-    "profit_factor": 1.1876476684190687,
-    "expectancy_bps": 22.518129378787886,
-    "tstat": 1.202911808245708,
+    "profit_factor": 1.1933984350911389,
+    "expectancy_bps": 23.0927246641477,
+    "tstat": 1.2325803576301468,
     "positive_years": 3,
     "years": 3
    },
    "validation": {
     "trades": 133,
     "win_rate": 0.3383458646616541,
-    "profit_factor": 0.9958073342913644,
-    "expectancy_bps": -0.5373573951911891,
-    "tstat": -0.014987699898543167
+    "profit_factor": 1.0066172253070473,
+    "expectancy_bps": 0.84272756721488,
+    "tstat": 0.02351598964129674
    },
    "train_edge": true,
    "validated": false,
@@ -793,19 +793,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 49,
-    "win_rate": 0.3469387755102041,
-    "profit_factor": 0.9870761401258261,
-    "expectancy_bps": -1.9824799926822247,
-    "tstat": -0.019381437821534713,
+    "win_rate": 0.3673469387755102,
+    "profit_factor": 0.8798144536711984,
+    "expectancy_bps": -20.372649380437338,
+    "tstat": -0.1897948311987563,
     "positive_years": 1,
     "years": 3
    },
    "validation": {
     "trades": 8,
     "win_rate": 0.625,
-    "profit_factor": 2.3875758123129134,
-    "expectancy_bps": 100.37722634899083,
-    "tstat": 0.8791565493878553
+    "profit_factor": 2.404133047507753,
+    "expectancy_bps": 101.85940134899086,
+    "tstat": 0.8841373535558605
    },
    "train_edge": false,
    "validated": false,
@@ -830,18 +830,18 @@
    "train": {
     "trades": 51,
     "win_rate": 0.6862745098039216,
-    "profit_factor": 2.8797121061586206,
-    "expectancy_bps": 297.8321146793284,
-    "tstat": 1.5947993523847255,
+    "profit_factor": 2.911481938836305,
+    "expectancy_bps": 301.2144107577599,
+    "tstat": 1.6068488016488458,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 9,
     "win_rate": 0.4444444444444444,
-    "profit_factor": 1.8413470145856154,
-    "expectancy_bps": 106.83519178094951,
-    "tstat": 0.7852626181262561
+    "profit_factor": 1.881760747674948,
+    "expectancy_bps": 110.73635844761621,
+    "tstat": 0.8154812966020599
    },
    "train_edge": false,
    "validated": false,
@@ -866,25 +866,25 @@
    "train": {
     "trades": 468,
     "win_rate": 0.3311965811965812,
-    "profit_factor": 1.0900641118664125,
-    "expectancy_bps": 7.998556447423113,
-    "tstat": 0.6856972105428076,
+    "profit_factor": 1.1090964578739562,
+    "expectancy_bps": 9.616402280756427,
+    "tstat": 0.8227517957421473,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 146,
     "win_rate": 0.3424657534246575,
-    "profit_factor": 1.299457160512746,
-    "expectancy_bps": 24.1913033310186,
-    "tstat": 1.21348490144088
+    "profit_factor": 1.3201698363416456,
+    "expectancy_bps": 25.67975709814184,
+    "tstat": 1.283514472575835
    },
-   "train_edge": false,
+   "train_edge": true,
    "validated": false,
    "configs_tried": 48
   },
   {
-   "id": "daily_reversal|long|15m|z=3.0|stop2.0xATR,rr3.0,hold24h",
+   "id": "daily_reversal|long|15m|z=3.0|stop3.0xATR,rr10.0,hold24h",
    "family": "daily_reversal",
    "side": "long",
    "tf": 15,
@@ -892,27 +892,27 @@
     "z": 3.0
    },
    "exit": [
-    2.0,
     3.0,
+    10.0,
     24
    ],
    "live_ok": true,
    "cost_model": "perp",
    "train": {
-    "trades": 286,
-    "win_rate": 0.45104895104895104,
-    "profit_factor": 1.8114171401911328,
-    "expectancy_bps": 139.98151823903441,
-    "tstat": 2.167001402861745,
+    "trades": 253,
+    "win_rate": 0.5335968379446641,
+    "profit_factor": 1.8704840812843224,
+    "expectancy_bps": 186.91619024771467,
+    "tstat": 2.2003482011848736,
     "positive_years": 3,
     "years": 3
    },
    "validation": {
-    "trades": 81,
-    "win_rate": 0.37037037037037035,
-    "profit_factor": 1.10212326669258,
-    "expectancy_bps": 19.19505574285722,
-    "tstat": 0.2801015641067312
+    "trades": 74,
+    "win_rate": 0.47297297297297297,
+    "profit_factor": 1.0212723833921606,
+    "expectancy_bps": 5.235223266044946,
+    "tstat": 0.057743651617169614
    },
    "train_edge": true,
    "validated": false,
@@ -936,18 +936,18 @@
    "train": {
     "trades": 345,
     "win_rate": 0.463768115942029,
-    "profit_factor": 0.9344404895606087,
-    "expectancy_bps": -9.07442585544276,
-    "tstat": -0.4320690229259245,
+    "profit_factor": 0.9421907715101584,
+    "expectancy_bps": -7.953247594573204,
+    "tstat": -0.3805625327833501,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 77,
-    "win_rate": 0.42857142857142855,
-    "profit_factor": 1.1722495556217294,
-    "expectancy_bps": 19.528426823422603,
-    "tstat": 0.3347063026172653
+    "win_rate": 0.44155844155844154,
+    "profit_factor": 1.1829596293128781,
+    "expectancy_bps": 20.644847602643363,
+    "tstat": 0.3536392249736757
    },
    "train_edge": false,
    "validated": false,
@@ -971,19 +971,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 1032,
-    "win_rate": 0.49806201550387597,
-    "profit_factor": 1.277622332289713,
-    "expectancy_bps": 45.03166823636595,
-    "tstat": 1.8755373599567815,
+    "win_rate": 0.499031007751938,
+    "profit_factor": 1.287859223430169,
+    "expectancy_bps": 46.70246765497065,
+    "tstat": 1.9433053125304653,
     "positive_years": 3,
     "years": 3
    },
    "validation": {
     "trades": 341,
-    "win_rate": 0.501466275659824,
-    "profit_factor": 1.0564158531042227,
-    "expectancy_bps": 9.40479524149431,
-    "tstat": 0.23881574496562044
+    "win_rate": 0.5073313782991202,
+    "profit_factor": 1.062472800489292,
+    "expectancy_bps": 10.385108144720297,
+    "tstat": 0.26363524959114926
    },
    "train_edge": true,
    "validated": false,
@@ -1007,19 +1007,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 801,
-    "win_rate": 0.4606741573033708,
-    "profit_factor": 1.2130938705921914,
-    "expectancy_bps": 21.84748246251013,
-    "tstat": 0.9917631436452159,
+    "win_rate": 0.4631710362047441,
+    "profit_factor": 1.215352813039352,
+    "expectancy_bps": 21.980542637291645,
+    "tstat": 1.006000383663,
     "positive_years": 1,
     "years": 3
    },
    "validation": {
     "trades": 340,
-    "win_rate": 0.38529411764705884,
-    "profit_factor": 0.795874935753006,
-    "expectancy_bps": -23.975002512368267,
-    "tstat": -0.8013455340404316
+    "win_rate": 0.38235294117647056,
+    "profit_factor": 0.8013230381945823,
+    "expectancy_bps": -23.23736398295651,
+    "tstat": -0.7767845148560714
    },
    "train_edge": false,
    "validated": false,
@@ -1045,18 +1045,18 @@
    "train": {
     "trades": 295,
     "win_rate": 0.49830508474576274,
-    "profit_factor": 1.3722047367686259,
-    "expectancy_bps": 24.026651144363314,
-    "tstat": 2.014466756983002,
+    "profit_factor": 1.3727727135996477,
+    "expectancy_bps": 24.076250805380287,
+    "tstat": 2.016680405700674,
     "positive_years": 3,
     "years": 3
    },
    "validation": {
     "trades": 100,
     "win_rate": 0.44,
-    "profit_factor": 1.2479194139841938,
-    "expectancy_bps": 18.86829125743707,
-    "tstat": 0.779962051627586
+    "profit_factor": 1.2519388376971379,
+    "expectancy_bps": 19.132260257437146,
+    "tstat": 0.7908391943590316
    },
    "train_edge": true,
    "validated": false,
@@ -1081,19 +1081,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 295,
-    "win_rate": 0.488135593220339,
-    "profit_factor": 1.266717911730519,
-    "expectancy_bps": 39.16640691316351,
-    "tstat": 1.0973082409155002,
+    "win_rate": 0.49830508474576274,
+    "profit_factor": 1.299471202966342,
+    "expectancy_bps": 43.28320691316348,
+    "tstat": 1.2206167505331988,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 98,
     "win_rate": 0.5408163265306123,
-    "profit_factor": 1.3439889791988648,
-    "expectancy_bps": 51.02075323182393,
-    "tstat": 0.8989771140659507
+    "profit_factor": 1.365494364512805,
+    "expectancy_bps": 53.62367874202798,
+    "tstat": 0.9487054224115409
    },
    "train_edge": true,
    "validated": false,
@@ -1117,19 +1117,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 405,
-    "win_rate": 0.528395061728395,
-    "profit_factor": 1.238062654896214,
-    "expectancy_bps": 40.07804972232592,
-    "tstat": 1.0494484192604567,
-    "positive_years": 2,
+    "win_rate": 0.5333333333333333,
+    "profit_factor": 1.264678661302324,
+    "expectancy_bps": 44.15013836430126,
+    "tstat": 1.1568496199996177,
+    "positive_years": 3,
     "years": 3
    },
    "validation": {
     "trades": 154,
-    "win_rate": 0.487012987012987,
-    "profit_factor": 0.9071675148630675,
-    "expectancy_bps": -16.289663697728596,
-    "tstat": -0.3987056354627479
+    "win_rate": 0.4935064935064935,
+    "profit_factor": 0.923330603642506,
+    "expectancy_bps": -13.332846814611663,
+    "tstat": -0.32712171501227255
    },
    "train_edge": true,
    "validated": false,
@@ -1152,20 +1152,20 @@
    "live_ok": false,
    "cost_model": "perp",
    "train": {
-    "trades": 279,
-    "win_rate": 0.43727598566308246,
-    "profit_factor": 1.1686726725400371,
-    "expectancy_bps": 24.0964270294043,
-    "tstat": 0.8240541018476655,
-    "positive_years": 2,
+    "trades": 305,
+    "win_rate": 0.42950819672131146,
+    "profit_factor": 1.2105367332262253,
+    "expectancy_bps": 28.86490383000554,
+    "tstat": 1.0504012528668902,
+    "positive_years": 3,
     "years": 3
    },
    "validation": {
     "trades": 15,
     "win_rate": 0.5333333333333333,
-    "profit_factor": 2.5593208025188843,
-    "expectancy_bps": 121.30100361564537,
-    "tstat": 1.3228029292896906
+    "profit_factor": 2.61295010053153,
+    "expectancy_bps": 123.87141028231207,
+    "tstat": 1.3491050377597253
    },
    "train_edge": true,
    "validated": false,
@@ -1189,19 +1189,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 2114,
-    "win_rate": 0.41863765373699147,
-    "profit_factor": 1.1204933187897659,
-    "expectancy_bps": 18.8727589516532,
-    "tstat": 1.2479704552714705,
+    "win_rate": 0.4195837275307474,
+    "profit_factor": 1.125431802574766,
+    "expectancy_bps": 19.631414249666477,
+    "tstat": 1.2970532362975757,
     "positive_years": 3,
     "years": 3
    },
    "validation": {
     "trades": 640,
     "win_rate": 0.3828125,
-    "profit_factor": 1.0527273211779755,
-    "expectancy_bps": 8.072389338437677,
-    "tstat": 0.2917088086360351
+    "profit_factor": 1.05887633014581,
+    "expectancy_bps": 8.98924636968777,
+    "tstat": 0.324340998874394
    },
    "train_edge": true,
    "validated": false,
@@ -1226,18 +1226,18 @@
    "train": {
     "trades": 298,
     "win_rate": 0.4395973154362416,
-    "profit_factor": 0.9342690609634012,
-    "expectancy_bps": -10.598824132552508,
-    "tstat": -0.22824917014447563,
+    "profit_factor": 0.9259733073587721,
+    "expectancy_bps": -11.920522790270626,
+    "tstat": -0.25956189570121974,
     "positive_years": 1,
     "years": 3
    },
    "validation": {
     "trades": 99,
     "win_rate": 0.35353535353535354,
-    "profit_factor": 0.4188068261046553,
-    "expectancy_bps": -97.99683365537526,
-    "tstat": -1.886883927461969
+    "profit_factor": 0.41985982562515484,
+    "expectancy_bps": -97.52242456446616,
+    "tstat": -1.880352381435708
    },
    "train_edge": false,
    "validated": false,
@@ -1261,18 +1261,18 @@
    "train": {
     "trades": 95,
     "win_rate": 0.3684210526315789,
-    "profit_factor": 1.0816734965355201,
-    "expectancy_bps": 9.413951741338499,
-    "tstat": 0.22381966596294858,
+    "profit_factor": 1.0902063417692127,
+    "expectancy_bps": 10.36799858344377,
+    "tstat": 0.24608680469012856,
     "positive_years": 1,
     "years": 3
    },
    "validation": {
     "trades": 29,
     "win_rate": 0.3103448275862069,
-    "profit_factor": 0.9128940342131889,
-    "expectancy_bps": -9.72775940581781,
-    "tstat": -0.17638434825067395
+    "profit_factor": 0.919279628411169,
+    "expectancy_bps": -8.982486992024622,
+    "tstat": -0.16281081453855717
    },
    "train_edge": false,
    "validated": false,
@@ -1296,18 +1296,18 @@
    "train": {
     "trades": 22,
     "win_rate": 0.5454545454545454,
-    "profit_factor": 2.191985363264561,
-    "expectancy_bps": 69.16281421862617,
-    "tstat": 0.82040846770399,
+    "profit_factor": 2.224433528142937,
+    "expectancy_bps": 70.16429149135347,
+    "tstat": 0.8338242068329974,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 4,
     "win_rate": 0.5,
-    "profit_factor": 1.0933259804801865,
-    "expectancy_bps": 5.975802159581909,
-    "tstat": 0.06999912829606673
+    "profit_factor": 1.1013960510318324,
+    "expectancy_bps": 6.4565021595819685,
+    "tstat": 0.07593670341686261
    },
    "train_edge": false,
    "validated": false,
@@ -1330,19 +1330,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 1325,
-    "win_rate": 0.4830188679245283,
-    "profit_factor": 1.1823827328045284,
-    "expectancy_bps": 25.343810377747108,
-    "tstat": 1.563638490403502,
+    "win_rate": 0.48226415094339625,
+    "profit_factor": 1.1803089954944437,
+    "expectancy_bps": 25.06881535887922,
+    "tstat": 1.548423349553547,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 422,
-    "win_rate": 0.4052132701421801,
-    "profit_factor": 0.7839158816997644,
-    "expectancy_bps": -33.29684754689422,
-    "tstat": -1.2130133323261916
+    "win_rate": 0.4075829383886256,
+    "profit_factor": 0.7909017619570422,
+    "expectancy_bps": -32.06217764168084,
+    "tstat": -1.1684194387507079
    },
    "train_edge": true,
    "validated": false,
@@ -1365,19 +1365,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 1063,
-    "win_rate": 0.51552210724365,
-    "profit_factor": 1.125837276073781,
-    "expectancy_bps": 17.50524668780098,
-    "tstat": 0.8183701507487118,
+    "win_rate": 0.522107243650047,
+    "profit_factor": 1.1541295080105962,
+    "expectancy_bps": 21.16061536136634,
+    "tstat": 0.9904484060871851,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 437,
-    "win_rate": 0.4897025171624714,
-    "profit_factor": 1.0562113917031322,
-    "expectancy_bps": 7.531005296128847,
-    "tstat": 0.25884307986128585
+    "win_rate": 0.4919908466819222,
+    "profit_factor": 1.087010965694054,
+    "expectancy_bps": 11.482218797272958,
+    "tstat": 0.39484233260900903
    },
    "train_edge": true,
    "validated": false,
@@ -1400,19 +1400,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 2020,
-    "win_rate": 0.4599009900990099,
-    "profit_factor": 1.0744352926275897,
-    "expectancy_bps": 10.804265016377212,
-    "tstat": 0.6541047781178598,
+    "win_rate": 0.4618811881188119,
+    "profit_factor": 1.0782574634162247,
+    "expectancy_bps": 11.335384917367357,
+    "tstat": 0.6863292750393252,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 672,
     "win_rate": 0.4211309523809524,
-    "profit_factor": 0.7777003040056595,
-    "expectancy_bps": -34.39268866687979,
-    "tstat": -1.3685961211814914
+    "profit_factor": 0.7850387349325789,
+    "expectancy_bps": -33.083522149022535,
+    "tstat": -1.3173488427446858
    },
    "train_edge": false,
    "validated": false,
@@ -1435,19 +1435,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 2943,
-    "win_rate": 0.3153244988107373,
-    "profit_factor": 0.9951479529174851,
-    "expectancy_bps": -0.5124906043101682,
-    "tstat": -0.05125075589337761,
+    "win_rate": 0.3177030241250425,
+    "profit_factor": 1.0067054887599856,
+    "expectancy_bps": 0.7056203029273291,
+    "tstat": 0.07014490918713284,
     "positive_years": 1,
     "years": 3
    },
    "validation": {
     "trades": 985,
-    "win_rate": 0.29644670050761424,
-    "profit_factor": 0.8750768191353818,
-    "expectancy_bps": -13.865693713526628,
-    "tstat": -0.8381986067581382
+    "win_rate": 0.29746192893401013,
+    "profit_factor": 0.8878233678275202,
+    "expectancy_bps": -12.355762596775396,
+    "tstat": -0.7460691773863217
    },
    "train_edge": false,
    "validated": false,
@@ -1472,18 +1472,18 @@
    "train": {
     "trades": 408,
     "win_rate": 0.5049019607843137,
-    "profit_factor": 1.302291947404892,
-    "expectancy_bps": 47.07235160771338,
-    "tstat": 1.3875905323867048,
+    "profit_factor": 1.3006440936703576,
+    "expectancy_bps": 46.84881312732128,
+    "tstat": 1.3811227400699908,
     "positive_years": 3,
     "years": 3
    },
    "validation": {
     "trades": 141,
-    "win_rate": 0.425531914893617,
-    "profit_factor": 0.6708428037059398,
-    "expectancy_bps": -65.03028403167772,
-    "tstat": -1.204499722998298
+    "win_rate": 0.4326241134751773,
+    "profit_factor": 0.675388541941858,
+    "expectancy_bps": -63.886991833096,
+    "tstat": -1.184479429051236
    },
    "train_edge": true,
    "validated": false,
@@ -1507,19 +1507,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 254,
-    "win_rate": 0.44881889763779526,
-    "profit_factor": 1.1893408600999649,
-    "expectancy_bps": 15.131697330269068,
-    "tstat": 0.870398333135727,
+    "win_rate": 0.452755905511811,
+    "profit_factor": 1.2020560981541109,
+    "expectancy_bps": 16.06345638538716,
+    "tstat": 0.9233324225270887,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 104,
     "win_rate": 0.4423076923076923,
-    "profit_factor": 1.0604161184521605,
-    "expectancy_bps": 5.175650290985089,
-    "tstat": 0.16651389693192253
+    "profit_factor": 1.0658160486432613,
+    "expectancy_bps": 5.611260867908159,
+    "tstat": 0.18111515923575816
    },
    "train_edge": true,
    "validated": false,
@@ -1544,18 +1544,18 @@
    "train": {
     "trades": 107,
     "win_rate": 0.5514018691588785,
-    "profit_factor": 1.0411582987801504,
-    "expectancy_bps": 4.785298274157797,
-    "tstat": 0.154224053747502,
+    "profit_factor": 1.043516616240144,
+    "expectancy_bps": 5.051933788176515,
+    "tstat": 0.16270029726410196,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 119,
     "win_rate": 0.453781512605042,
-    "profit_factor": 0.8834463351260506,
-    "expectancy_bps": -15.531888025279988,
-    "tstat": -0.4723686890301011
+    "profit_factor": 0.8928667521605942,
+    "expectancy_bps": -14.204729201750412,
+    "tstat": -0.43161116881800077
    },
    "train_edge": false,
    "validated": false,
@@ -1579,19 +1579,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 393,
-    "win_rate": 0.44274809160305345,
-    "profit_factor": 1.1666645484556493,
-    "expectancy_bps": 20.83033099430754,
-    "tstat": 0.8695244188303475,
+    "win_rate": 0.4529262086513995,
+    "profit_factor": 1.1972344455754766,
+    "expectancy_bps": 24.29520885690294,
+    "tstat": 1.0135037506768032,
     "positive_years": 1,
     "years": 3
    },
    "validation": {
     "trades": 281,
-    "win_rate": 0.4626334519572954,
-    "profit_factor": 1.0412949537501757,
-    "expectancy_bps": 5.264628675611704,
-    "tstat": 0.17893191004750508
+    "win_rate": 0.4697508896797153,
+    "profit_factor": 1.0692549814589303,
+    "expectancy_bps": 8.694292376679257,
+    "tstat": 0.2955338704753297
    },
    "train_edge": false,
    "validated": false,
@@ -1615,19 +1615,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 397,
-    "win_rate": 0.4811083123425693,
-    "profit_factor": 1.1763999138189083,
-    "expectancy_bps": 29.470975878984998,
-    "tstat": 1.0029086435068348,
+    "win_rate": 0.4836272040302267,
+    "profit_factor": 1.170475721044711,
+    "expectancy_bps": 28.51027713843092,
+    "tstat": 0.9718197157217067,
     "positive_years": 3,
     "years": 3
    },
    "validation": {
     "trades": 109,
     "win_rate": 0.46788990825688076,
-    "profit_factor": 0.8168516122522194,
-    "expectancy_bps": -34.32451675549427,
-    "tstat": -0.702218504077341
+    "profit_factor": 0.8208896603704634,
+    "expectancy_bps": -33.48258923255826,
+    "tstat": -0.685118902233629
    },
    "train_edge": true,
    "validated": false,
@@ -1652,18 +1652,18 @@
    "train": {
     "trades": 252,
     "win_rate": 0.4523809523809524,
-    "profit_factor": 1.2046305935827542,
-    "expectancy_bps": 28.705741380318056,
-    "tstat": 0.6638261281871687,
+    "profit_factor": 1.2083677572062692,
+    "expectancy_bps": 29.120224316826,
+    "tstat": 0.6738652232175192,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 124,
     "win_rate": 0.3709677419354839,
-    "profit_factor": 0.5781156067930041,
-    "expectancy_bps": -66.06374741209093,
-    "tstat": -2.213396229708231
+    "profit_factor": 0.582381880023874,
+    "expectancy_bps": -65.13560547660701,
+    "tstat": -2.1829907740309618
    },
    "train_edge": true,
    "validated": false,
@@ -1686,19 +1686,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 1713,
-    "win_rate": 0.3380035026269702,
-    "profit_factor": 1.059959862516323,
-    "expectancy_bps": 7.957707954521171,
-    "tstat": 0.6002472101066051,
+    "win_rate": 0.3374197314652656,
+    "profit_factor": 1.0589205097525587,
+    "expectancy_bps": 7.825010581491426,
+    "tstat": 0.5903119135131065,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 584,
     "win_rate": 0.3493150684931507,
-    "profit_factor": 0.96903164195596,
-    "expectancy_bps": -3.6397573671194583,
-    "tstat": -0.17027252251212602
+    "profit_factor": 0.9741740816014818,
+    "expectancy_bps": -3.0285958945166183,
+    "tstat": -0.14162210446394707
    },
    "train_edge": false,
    "validated": false,
@@ -1721,19 +1721,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 1230,
-    "win_rate": 0.4268292682926829,
-    "profit_factor": 0.973792678242419,
-    "expectancy_bps": -2.4639103149227726,
-    "tstat": -0.20118387456780648,
+    "win_rate": 0.43089430894308944,
+    "profit_factor": 0.9801810614825209,
+    "expectancy_bps": -1.8584085263048957,
+    "tstat": -0.15133652715482748,
     "positive_years": 1,
     "years": 3
    },
    "validation": {
     "trades": 416,
-    "win_rate": 0.4254807692307692,
-    "profit_factor": 1.0271760168414787,
-    "expectancy_bps": 2.5077933108478776,
-    "tstat": 0.12327487356085147
+    "win_rate": 0.42788461538461536,
+    "profit_factor": 1.0352458256629846,
+    "expectancy_bps": 3.2349322531555695,
+    "tstat": 0.1589972512004496
    },
    "train_edge": false,
    "validated": false,
@@ -1757,19 +1757,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 549,
-    "win_rate": 0.5482695810564663,
-    "profit_factor": 1.3844567716570617,
-    "expectancy_bps": 63.09069419244983,
-    "tstat": 1.781033960149241,
+    "win_rate": 0.5500910746812386,
+    "profit_factor": 1.412985295964412,
+    "expectancy_bps": 67.49190311776863,
+    "tstat": 1.8942918269278786,
     "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 180,
     "win_rate": 0.5166666666666667,
-    "profit_factor": 1.2217762641934358,
-    "expectancy_bps": 39.32036248716297,
-    "tstat": 0.5954486700521384
+    "profit_factor": 1.2327284556564075,
+    "expectancy_bps": 41.07994693160756,
+    "tstat": 0.6210829134460181
    },
    "train_edge": true,
    "validated": false,
@@ -1793,19 +1793,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 1686,
-    "win_rate": 0.3867141162514828,
-    "profit_factor": 0.9412060538419152,
-    "expectancy_bps": -8.141183600309052,
-    "tstat": -0.5704942723956096,
-    "positive_years": 1,
+    "win_rate": 0.3926453143534994,
+    "profit_factor": 0.9611204324155188,
+    "expectancy_bps": -5.33053733696388,
+    "tstat": -0.3735242906623775,
+    "positive_years": 2,
     "years": 3
    },
    "validation": {
     "trades": 576,
-    "win_rate": 0.3819444444444444,
-    "profit_factor": 0.8656949414639254,
-    "expectancy_bps": -19.60710008277977,
-    "tstat": -0.877875111329175
+    "win_rate": 0.3836805555555556,
+    "profit_factor": 0.8818060290896852,
+    "expectancy_bps": -17.110749735557597,
+    "tstat": -0.7654917979812628
    },
    "train_edge": false,
    "validated": false,
@@ -1830,19 +1830,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 1091,
-    "win_rate": 0.459211732355637,
-    "profit_factor": 1.0799507477764996,
-    "expectancy_bps": 13.701924251013631,
-    "tstat": 0.8969370831518135,
-    "positive_years": 2,
+    "win_rate": 0.461044912923923,
+    "profit_factor": 1.0850646734481493,
+    "expectancy_bps": 14.55293616668738,
+    "tstat": 0.9516110692068505,
+    "positive_years": 3,
     "years": 3
    },
    "validation": {
     "trades": 365,
-    "win_rate": 0.42191780821917807,
-    "profit_factor": 0.762957140538193,
-    "expectancy_bps": -40.390476433024475,
-    "tstat": -1.9024436441514048
+    "win_rate": 0.4273972602739726,
+    "profit_factor": 0.7706568851509578,
+    "expectancy_bps": -38.87181095357231,
+    "tstat": -1.8314599340435644
    },
    "train_edge": false,
    "validated": false,
@@ -1867,19 +1867,19 @@
    "cost_model": "perp",
    "train": {
     "trades": 1093,
-    "win_rate": 0.47483989021043,
-    "profit_factor": 0.9844295787426363,
-    "expectancy_bps": -2.456671329860901,
-    "tstat": -0.18438282804310374,
+    "win_rate": 0.48032936870997256,
+    "profit_factor": 1.0005391658999236,
+    "expectancy_bps": 0.0847976545855421,
+    "tstat": 0.006190638757988225,
     "positive_years": 1,
     "years": 3
    },
    "validation": {
     "trades": 365,
-    "win_rate": 0.4821917808219178,
-    "profit_factor": 0.9713666190575737,
-    "expectancy_bps": -4.223451916528692,
-    "tstat": -0.2117681027487532
+    "win_rate": 0.4904109589041096,
+    "profit_factor": 0.993263933948868,
+    "expectancy_bps": -0.9823557521451751,
+    "tstat": -0.04927797814461984
    },
    "train_edge": false,
    "validated": false,
@@ -1893,8 +1893,8 @@
   "val_min_trades": 100,
   "val_min_pf": 1.1,
   "val_min_expectancy_bps": 0.0,
-  "val_min_tstat": 2.0
+  "val_min_tstat": 3.0
  },
  "configs_total": 1720,
- "frozen_sha256": "6f4760b781ffd085d8d4ba66925dc04eb0063665687c17136cb16e939453ee5f"
+ "frozen_sha256": "e033f5db421b37565f740925a882c909bf3e72e5f27b4729f120dce78dbdfe74"
 }
