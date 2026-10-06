@@ -94,7 +94,8 @@ def cmd_research(args) -> None:
     if args.action == "download":
         for a in assets:
             n = history.download(a, history.TRAIN_START, datetime(2025, 12, 31, tzinfo=timezone.utc))
-            print(f"{a}: {n} new monthly files, coverage {history.coverage(a)}")
+            nf = history.download_funding(a, history.TRAIN_START, datetime(2025, 12, 31, tzinfo=timezone.utc))
+            print(f"{a}: {n} new price files, {nf} new funding files, coverage {history.coverage(a)}")
     elif args.action == "status":
         for a in assets:
             print(f"{a}: {history.coverage(a)}")
@@ -128,6 +129,7 @@ def cmd_research(args) -> None:
         end = datetime.now(timezone.utc)
         for a in frozen["assets"]:
             history.download(a, history.TEST_START - test2026.WARMUP, end)
+            history.download_funding(a, history.TEST_START - test2026.WARMUP, end)
         res = test2026.run(frozen, peeked_files=peeked)
         from .research import report
         print(json.dumps(res["meta"], indent=1))

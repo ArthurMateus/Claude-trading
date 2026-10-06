@@ -26,7 +26,7 @@ import pandas as pd
 from ..config import ROOT
 from . import history
 from .engine import COST_MODELS, simulate, trade_stats
-from .families import EXITS, FAMILIES, MAX_HOLD_MINUTES, SIDES, TIMEFRAMES, entry_edges, strategy_id
+from .families import EXITS, FAMILIES, SIDES, TIMEFRAMES, build_context, entry_edges, signal_for, strategy_id
 
 log = logging.getLogger(__name__)
 
@@ -70,32 +70,55 @@ def load_universe(assets: list[str], start: datetime, end: datetime, *, allow_te
     return data
 
 
+def simulate_exits(d: pd.DataFrame, entries, side: str, exits: list[tuple], asset: str, tf: int) -> dict:
+    """Run simulate once per distinct hold time; keys are full (stop, rr, hold_h) exit tuples."""
+    out = {}
+    for hold in sorted({ex[2] for ex in exits}):
+        group = [ex for ex in exits if ex[2] == hold]
+        H = max(1, hold * 60 // tf)
+        res = simulate(d, entries, side, [(ex[0], ex[1]) for ex in group], H, asset, tf)
+        for ex in group:
+            out[ex] = res[(ex[0], ex[1])]
+    return out
+
+
 def generate(data: dict[str, pd.DataFrame], configs: list[dict] | None = None,
-             keep_from: datetime | None = None) -> dict[str, pd.DataFrame]:
+             keep_from: datetime | None = None, funding: dict[str, pd.Series] | None = None) -> dict[str, pd.DataFrame]:
     """Gross trades per strategy id. `configs` restricts to frozen specs; `keep_from` drops earlier entries
-    (indicator warm-up may use earlier bars, trades may not)."""
+    (indicator warm-up may use earlier bars, trades may not). `funding` feeds the funding-rate family."""
     wanted = {c["id"]: c for c in configs} if configs else None
     out: dict[str, list[pd.DataFrame]] = defaultdict(list)
-    for asset, df5 in data.items():
-        for tf in TIMEFRAMES:
-            if wanted and not any(c["tf"] == tf for c in wanted.values()):
-                continue
+    for tf in TIMEFRAMES:
+        if wanted and not any(c["tf"] == tf for c in wanted.values()):
+            continue
+        ctx = build_context(data, tf, funding)
+        for asset, df5 in data.items():
             d = history.resample(df5, tf)
-            H = MAX_HOLD_MINUTES // tf
             for fam in FAMILIES.values():
                 for params in fam.param_sets():
                     for side in SIDES:
-                        ids = {ex: strategy_id(fam.name, side, tf, params, ex) for ex in EXITS}
+                        ids = {ex: strategy_id(fam.name, side, tf, params, ex) for ex in EXITS
+                               if ex[2] * 60 >= tf}
                         exits = [ex for ex, i in ids.items() if not wanted or i in wanted]
                         if not exits:
                             continue
-                        entries = entry_edges(fam.signal(d, side, tf, **params))
-                        for ex, trades in simulate(d, entries, side, exits, H, asset, tf).items():
+                        entries = entry_edges(signal_for(fam, d, side, tf, params, ctx, asset))
+                        for ex, trades in simulate_exits(d, entries, side, exits, asset, tf).items():
                             if keep_from is not None:
                                 trades = trades[trades["entry_ts"] >= keep_from]
                             if len(trades):
                                 out[ids[ex]].append(trades)
     return {k: pd.concat(v, ignore_index=True).sort_values("entry_ts", ignore_index=True) for k, v in out.items()}
+
+
+def load_funding(assets: list[str], start: datetime, end: datetime, *, allow_test: bool = False,
+                 loader=history.load_funding) -> dict[str, pd.Series]:
+    out = {}
+    for a in assets:
+        s = loader(a, start, end, allow_test=allow_test)
+        if len(s):
+            out[a] = s
+    return out
 
 
 def _parse_id(sid: str) -> dict:
@@ -106,9 +129,10 @@ def _parse_id(sid: str) -> dict:
         k, v = kv.split("=")
         typ = type(fam.grid[k][0])
         p[k] = (v == "True") if typ is bool else typ(v)
-    stop, rr = exit_.replace("stop", "").replace("xATR", "").split(",rr")
+    stop, rest = exit_.replace("stop", "").replace("xATR", "").split(",rr")
+    rr, hold = rest.split(",hold")
     return {"id": sid, "family": family, "side": side, "tf": int(tf[:-1]), "params": p,
-            "exit": [float(stop), float(rr)], "live_ok": fam.live_ok}
+            "exit": [float(stop), float(rr), int(hold.rstrip("h"))], "live_ok": fam.live_ok}
 
 
 def select(trades: dict[str, pd.DataFrame]) -> dict:
@@ -181,10 +205,12 @@ def load_frozen(path: Path = FROZEN_PATH, check_source: bool = True) -> dict:
     return body
 
 
-def run_search(assets: list[str], loader=history.load, contaminated: bool = False) -> dict:
+def run_search(assets: list[str], loader=history.load, contaminated: bool = False,
+               funding_loader=history.load_funding) -> dict:
     data = load_universe(assets, history.TRAIN_START, history.TEST_START, loader=loader)
     if not data:
         raise RuntimeError("no history cached; run `tradebot research download` first")
-    trades = generate(data)
+    funding = load_funding(sorted(data), history.TRAIN_START, history.TEST_START, loader=funding_loader)
+    trades = generate(data, funding=funding)
     doc = select(trades)
     return freeze(doc, sorted(data), contaminated=contaminated)

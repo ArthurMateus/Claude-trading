@@ -55,27 +55,50 @@ def test_download_load_and_refuse_test_period(tmp_path):
 
 # ---------------------------------------------------------------- no lookahead
 
+UNIVERSE = ["BTC/USD", "ETH/USD", "SOL/USD"]
+
+
 @pytest.fixture(scope="module")
-def bars5():
-    df = SyntheticProvider(seed=21).bars("ETH/USD", 5, limit=8000).copy()
-    df["taker_buy_base"] = df["volume"] * 0.5
-    return df
+def universe():
+    prov = SyntheticProvider(seed=21)
+    data = {}
+    for a in UNIVERSE:
+        df = prov.bars(a, 5, limit=9000).copy()
+        df["taker_buy_base"] = df["volume"] * 0.5
+        data[a] = df
+    idx = data["BTC/USD"].index
+    settle = pd.date_range(idx[0].ceil("8h"), idx[-1], freq="8h")
+    rng = np.random.default_rng(3)
+    funding = {a: pd.Series(1e-4 + rng.normal(0, 3e-4, len(settle)), index=settle) for a in UNIVERSE}
+    return data, funding
 
 
 @pytest.mark.parametrize("tf", TIMEFRAMES)
-def test_no_family_looks_ahead(bars5, tf):
-    full = history.resample(bars5, tf)
-    hour_starts = np.flatnonzero(bars5.index.minute < 5)     # first 5m bar of each clock hour (bars sit at :02, :07, ...)
-    for cut_hours in (300, 433, 517):
-        k5 = int(hour_starts[cut_hours])                      # cut on a clock-hour boundary (complete HTF bars)
-        part = history.resample(bars5.iloc[:k5], tf)
-        last = part.index[-1]
-        for fam in FAMILIES.values():
-            for params in fam.param_sets():
-                for side in ("long", "short"):
-                    a = fam.signal(full, side, tf, **params).fillna(False)
-                    b = fam.signal(part, side, tf, **params).fillna(False)
-                    assert bool(a.loc[last]) == bool(b.loc[last]), (fam.name, params, side, tf, cut_hours)
+def test_no_family_looks_ahead(universe, tf):
+    """Signals at the last complete bar must be identical with and without all later data (prices of every
+    coin and funding), for every family including the cross-asset and funding ones."""
+    from tradebot.research.families import build_context, signal_for
+    data, funding = universe
+    idx = data["BTC/USD"].index
+    minute_of_day = idx.hour * 60 + idx.minute
+    starts = np.flatnonzero(minute_of_day % tf < 5)            # first 5m bar of each tf bin
+    full_ctx = build_context(data, tf, funding)
+    full = {a: history.resample(df, tf) for a, df in data.items()}
+    for frac in (0.55, 0.7, 0.85):
+        k5 = int(starts[int(len(starts) * frac)])
+        cut = idx[k5]
+        part_data = {a: df.iloc[:k5] for a, df in data.items()}
+        part_funding = {a: s[s.index <= cut] for a, s in funding.items()}
+        part_ctx = build_context(part_data, tf, part_funding)
+        for asset in UNIVERSE:
+            part = history.resample(part_data[asset], tf)
+            last = part.index[-1]
+            for fam in FAMILIES.values():
+                for params in fam.param_sets():
+                    for side in ("long", "short"):
+                        a = signal_for(fam, full[asset], side, tf, params, full_ctx, asset).fillna(False)
+                        b = signal_for(fam, part, side, tf, params, part_ctx, asset).fillna(False)
+                        assert bool(a.loc[last]) == bool(b.loc[last]), (fam.name, params, side, tf, asset, frac)
 
 
 # ---------------------------------------------------------------- fills
@@ -210,15 +233,25 @@ def test_exit_timestamp_is_bar_close_and_trades_do_not_overlap():
 
 
 def test_every_family_fires_on_every_timeframe():
-    df = SyntheticProvider(seed=4).bars("BTC/USD", 5, limit=20000).copy()
-    df["taker_buy_base"] = df["volume"] * np.random.default_rng(0).uniform(0.3, 0.7, len(df))
+    from tradebot.research.families import build_context, signal_for
+    prov = SyntheticProvider(seed=4)
+    data = {}
+    for a in ("BTC/USD", "ETH/USD", "SOL/USD", "LTC/USD", "LINK/USD"):
+        df = prov.bars(a, 5, limit=40000).copy()
+        df["taker_buy_base"] = df["volume"] * np.random.default_rng(0).uniform(0.3, 0.7, len(df))
+        data[a] = df
+    idx = data["BTC/USD"].index
+    settle = pd.date_range(idx[0].ceil("8h"), idx[-1], freq="8h")
+    funding = {a: pd.Series(np.random.default_rng(1).normal(1e-4, 3e-4, len(settle)), index=settle) for a in data}
     for tf in TIMEFRAMES:
-        d = history.resample(df, tf)
+        ctx = build_context(data, tf, funding)
         for fam in FAMILIES.values():
             if fam.name == "climax_reversal":
                 continue   # random walks have no volume climaxes with rejection wicks
-            fired = sum(len(entry_edges(fam.signal(d, side, tf, **p))) for p in fam.param_sets()
-                        for side in ("long", "short"))
+            if fam.name == "session_breakout" and tf == 240:
+                continue   # 4h bars can't resolve a one-hour opening range
+            fired = sum(len(entry_edges(signal_for(fam, history.resample(data[a], tf), side, tf, p, ctx, a)))
+                        for a in ("ETH/USD", "SOL/USD") for p in fam.param_sets() for side in ("long", "short"))
             assert fired > 0, (fam.name, tf)
 
 
@@ -231,8 +264,8 @@ def _select_doc():
                          "asset": "BTC/USD"})
     bad = good.assign(gross=-0.004 + rng.normal(0, 0.01, len(ts)))
     fam = "ema_cross"
-    g_id = f"{fam}|long|60m|fast=9,slow=50,trend_filter=True|stop1.5xATR,rr2.0"
-    b_id = f"{fam}|long|60m|fast=20,slow=100,trend_filter=False|stop1.0xATR,rr2.0"
+    g_id = f"{fam}|long|60m|fast=9,slow=50,trend_filter=True|stop1.5xATR,rr2.0,hold8h"
+    b_id = f"{fam}|long|60m|fast=20,slow=100,trend_filter=False|stop1.0xATR,rr2.0,hold24h"
     return search.select({g_id: good, b_id: bad}), g_id
 
 
@@ -240,6 +273,7 @@ def test_select_freeze_and_tamper_detection(tmp_path):
     doc, g_id = _select_doc()
     perp = [c for c in doc["champions"] if c["cost_model"] == "perp"][0]
     assert perp["id"] == g_id and perp["validated"] and perp["params"]["trend_filter"] is True
+    assert perp["exit"] == [1.5, 2.0, 8]
     path = tmp_path / "frozen.json"
     body = search.freeze(doc, ["BTC/USD"], path, ledger=tmp_path / "ledger.jsonl")
     assert body["headline"] == search.HEADLINE and body["contaminated"] is False
@@ -259,7 +293,7 @@ def test_zero_edge_rarely_validates():
         cost = (2 * (5 + 3) + 1 / 8) / 1e4                # perp round trip + 1h of funding
         noise = pd.DataFrame({"entry_ts": ts, "gross": cost + rng.normal(0, 0.01, len(ts)), "hours": 1.0,
                               "asset": "ETH/USD"})        # exactly zero edge after perp costs
-        sid = "ema_cross|long|60m|fast=9,slow=50,trend_filter=True|stop1.5xATR,rr2.0"
+        sid = "ema_cross|long|60m|fast=9,slow=50,trend_filter=True|stop1.5xATR,rr2.0,hold8h"
         champ = [c for c in search.select({sid: noise})["champions"] if c["cost_model"] == "perp"][0]
         passed += champ["validated"]
     assert passed <= 4                                 # ~2.5% expected at t >= 2
@@ -322,7 +356,7 @@ def test_null_samples_the_whole_test_window():
     rng = np.random.default_rng(1)
     c = 100 * np.exp(np.cumsum(rng.normal(0, 0.001, len(idx))))
     df5 = pd.DataFrame({"open": c, "high": c * 1.002, "low": c * 0.998, "close": c, "volume": 1.0}, index=idx)
-    champion = {"id": "x", "tf": 60, "side": "long", "exit": [1.5, 2.0]}
+    champion = {"id": "x", "tf": 60, "side": "long", "exit": [1.5, 2.0, 4]}
     seen = []
     orig = test2026.simulate
 
@@ -355,3 +389,35 @@ def test_report_handles_a_run_where_no_portfolio_qualified(tmp_path):
     pd.DataFrame().to_csv(tmp_path / "equity_curves.csv")
     text = report.write(tmp_path).read_text(encoding="utf-8")
     assert "No result" in text and "no champion passed the in-sample gate" in text
+
+
+def test_funding_parse_and_test_period_guard(tmp_path):
+    t0 = int(datetime(2025, 11, 1, tzinfo=timezone.utc).timestamp() * 1000)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        rows = ["calc_time,funding_interval_hours,last_funding_rate"] + \
+               [f"{t0 + i * 8 * 3600 * 1000},8,{0.0001 * (i % 3)}" for i in range(6)]
+        z.writestr("f.csv", "\n".join(rows))
+    s = history.parse_funding_zip(buf.getvalue())
+    assert len(s) == 6 and s.index[0] == pd.Timestamp("2025-11-01", tz="UTC") and s.iloc[1] == pytest.approx(1e-4)
+    assert history.download_funding("BTC/USD", datetime(2025, 11, 1, tzinfo=timezone.utc),
+                                    datetime(2025, 11, 30, tzinfo=timezone.utc), fetch=lambda url: buf.getvalue(),
+                                    cache=tmp_path) == 1
+    got = history.load_funding("BTC/USD", datetime(2025, 11, 1, tzinfo=timezone.utc), history.TEST_START,
+                               cache=tmp_path)
+    assert len(got) == 6
+    with pytest.raises(history.LookaheadError):
+        history.load_funding("BTC/USD", datetime(2025, 11, 1, tzinfo=timezone.utc),
+                             datetime(2026, 3, 1, tzinfo=timezone.utc), cache=tmp_path)
+
+
+def test_funding_is_only_visible_from_the_bar_it_settles_in():
+    from tradebot.research.families import build_context
+    idx = pd.date_range("2025-06-01", periods=48 * 12, freq="5min", tz="UTC")
+    df = pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}, index=idx)
+    settle = pd.Timestamp("2025-06-01 08:00", tz="UTC")
+    ctx = build_context({"BTC/USD": df}, 60, {"BTC/USD": pd.Series([0.001], index=[settle])})
+    f = ctx["funding"]["BTC/USD"]
+    assert np.isnan(f.loc[pd.Timestamp("2025-06-01 06:00", tz="UTC")])     # bar closing 07:00: not yet known
+    assert f.loc[pd.Timestamp("2025-06-01 07:00", tz="UTC")] == 0.001      # bar closing 08:00: known at its close
+    assert np.isnan(f.loc[pd.Timestamp("2025-06-02 00:00", tz="UTC")])     # >16h stale: dropped

@@ -1,5 +1,10 @@
 # Strategy research: design on ≤ 2025, test once on 2026
 
+> **v2 (after the first 2026 run):** holds up to 24h (8h/24h time exits), timeframes 15m/1h/4h (5m dropped),
+> 5 new families (tsmom, xs_momentum, btc_lead, funding_contrarian, daily_reversal; the last two use Binance
+> USD-M funding rates), long and short. Run it with `tradebot research search --refreeze --contaminated`: the
+> report will say 2026 was already viewed. Results of run 1 are in `docs/BACKTEST_2026_FINDINGS.md`.
+
 The question this answers: *which strategies would have worked in 2026 if they had been designed using only data
 up to the end of 2025, and what would different risk levels (1–20% per trade) and leverage (1–20x) have done to a
 $500 account?*
@@ -43,8 +48,22 @@ Every champion is reported on 2026, including the failures, so the results can't
 | climax_reversal | capitulation / blow-off bar with a rejection wick | volume z, wick |
 | taker_flow | aggressor (taker-buy) share of volume with the trend | threshold, window (Binance data only, not usable live on Alpaca) |
 
-Exits: stop at 1.0/1.5/2.0 × ATR and reward:risk 1.5/2/3, 4-hour time stop. Each family has long and short forms.
-Shorts only exist on the perp venue.
+Exits (v2): (stop ATR × reward:risk × max hold) = 1.0×2/8h, 1.5×2/8h, 2.0×3/24h, 3.0×10/24h (the last is
+effectively a 24h time exit with a wide stop). Each family has long and short forms. Shorts only exist on the
+perp venue.
+
+New in v2:
+
+| Family | Idea | Parameters searched |
+|---|---|---|
+| tsmom | vol-scaled 1–7 day return beyond a threshold (trend) | lookback 24/72/168h, z 0.5/1.5 |
+| xs_momentum | at each rebalance, long the k strongest / short the k weakest of the 7 coins | lookback 24/72h, k 1/2, rebalance 8/24h |
+| btc_lead | after an outsized BTC move, trade alts that haven't followed yet | window 1/4h, z 1.5/2.5 |
+| funding_contrarian | fade unusually high (short) / low (long) perpetual funding | z 1.5/2.5, window 7/30d |
+| daily_reversal | fade an extreme 24h move | z 2/3 |
+
+Funding rates come from Binance's monthly archives, which publish after each month ends. The current month has
+no funding data, so funding signals stop at the last published settlement plus 16h.
 
 ## Costs and venues
 

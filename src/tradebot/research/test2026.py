@@ -19,9 +19,9 @@ import pandas as pd
 from ..config import ROOT
 from . import history
 from .engine import COST_MODELS, simulate, trade_stats
-from .families import MAX_HOLD_MINUTES
 from .portfolio import price_frame, simulate_portfolio
-from .search import HEADLINE, generate, ledger_entries, load_frozen, load_universe, record_test_run
+from .search import (HEADLINE, generate, ledger_entries, load_frozen, load_funding, load_universe,
+                     record_test_run)
 
 RESULTS = ROOT / "research" / "results" / "2026"
 RISKS = [1, 2, 3, 5, 7.5, 10, 15, 20]
@@ -41,39 +41,44 @@ def null_expectancy(champion: dict, data: dict[str, pd.DataFrame], trades: pd.Da
     """Mean and 95th percentile of net expectancy (bps) of random entries with the champion's exits, sampled
     uniformly over the whole test window at the champion's per-asset trade count."""
     tf, side = champion["tf"], champion["side"]
-    exit_ = tuple(champion["exit"])
-    H = MAX_HOLD_MINUTES // tf
+    stop, rr, hold = champion["exit"]
+    exit_ = (stop, rr)
+    H = max(1, int(hold) * 60 // tf)
     rng = np.random.default_rng(zlib.crc32(champion["id"].encode()))
     counts = trades["asset"].value_counts().to_dict()
-    reps = []
-    for _ in range(NULL_REPS):
-        nets = []
-        for asset, n in counts.items():
-            key = (id(data), asset, tf)
-            if key not in _resampled:
-                _resampled[key] = history.resample(data[asset], tf)
-            d = _resampled[key]
-            pool = np.flatnonzero(d.index >= history.TEST_START)
-            if len(pool) == 0:
-                continue
-            ent = np.sort(rng.choice(pool, size=min(len(pool), 3 * n + 1), replace=False))
-            t = simulate(d, ent, side, [exit_], H, asset, tf)[exit_]
-            if len(t) > n:     # a random subset, not the earliest n (that would skip the end of the window)
-                t = t.iloc[np.sort(rng.choice(len(t), size=n, replace=False))]
-            if len(t):
-                nets.append(cm.net(t["gross"].to_numpy(), t["hours"].to_numpy(), t["asset"].to_numpy()))
-        if nets:
-            reps.append(np.concatenate(nets).mean() * 1e4)
-    return (float(np.mean(reps)), float(np.percentile(reps, 95))) if reps else (float("nan"), float("nan"))
+    sums, total = np.zeros(NULL_REPS), 0
+    for asset, n in counts.items():
+        key = (id(data), asset, tf)
+        if key not in _resampled:
+            _resampled[key] = history.resample(data[asset], tf)
+        d = _resampled[key]
+        pool = np.flatnonzero(d.index >= history.TEST_START)
+        if len(pool) == 0:
+            continue
+        # Every test-window bar as a possible entry, then n random draws per repetition (vectorized: one simulate
+        # per asset instead of one per repetition).
+        t = simulate(d, pool, side, [exit_], H, asset, tf, non_overlapping=False)[exit_]
+        if len(t) == 0:
+            continue
+        net = cm.net(t["gross"].to_numpy(), t["hours"].to_numpy(), t["asset"].to_numpy())
+        draws = rng.integers(0, len(net), size=(NULL_REPS, int(n)))
+        sums += net[draws].sum(axis=1)
+        total += int(n)
+    if total == 0:
+        return float("nan"), float("nan")
+    reps = sums / total * 1e4
+    return float(np.mean(reps)), float(np.percentile(reps, 95))
 
 
 def run(frozen: dict | None = None, loader=history.load, start_equity: float = 500.0,
-        out_dir: Path = RESULTS, ledger: Path | None = None, peeked_files: list[str] | None = None) -> dict:
+        out_dir: Path = RESULTS, ledger: Path | None = None, peeked_files: list[str] | None = None,
+        funding_loader=history.load_funding) -> dict:
     frozen = frozen or load_frozen()
     end = pd.Timestamp.now(tz="UTC").floor("D").to_pydatetime()
     data = load_universe(frozen["assets"], history.TEST_START - WARMUP, end, allow_test=True, loader=loader)
+    funding = load_funding(sorted(data), history.TEST_START - WARMUP, end, allow_test=True, loader=funding_loader)
     champions = frozen["champions"]
-    trades = generate(data, configs=champions, keep_from=history.TEST_START)
+    trades = generate(data, configs=champions, keep_from=history.TEST_START, funding=funding)
     prices = price_frame(data, history.TEST_START)
     test_days = (end - history.TEST_START).days
 

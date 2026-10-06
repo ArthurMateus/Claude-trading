@@ -54,8 +54,10 @@ TRADE_COLUMNS = ["asset", "entry_ts", "exit_ts", "exit_bar_ts", "side", "entry",
 
 
 def simulate(df: pd.DataFrame, entries: np.ndarray, side: str, exits: list[tuple[float, float]],
-             max_hold_bars: int, asset: str = "", tf_minutes: int = 5) -> dict[tuple[float, float], pd.DataFrame]:
-    """Non-overlapping trades for the entry indices (signal bars) under every (stop ATR, reward:risk) exit rule."""
+             max_hold_bars: int, asset: str = "", tf_minutes: int = 5,
+             non_overlapping: bool = True) -> dict[tuple[float, float], pd.DataFrame]:
+    """Trades for the entry indices (signal bars) under every (stop ATR, reward:risk) exit rule; non-overlapping
+    per configuration unless `non_overlapping` is False (the random-entry null samples from all of them)."""
     n, H = len(df), max_hold_bars
     o, h, l, c = (df[k].to_numpy(dtype=float) for k in ("open", "high", "low", "close"))
     a = atr(df).to_numpy(dtype=float)
@@ -66,8 +68,9 @@ def simulate(df: pd.DataFrame, entries: np.ndarray, side: str, exits: list[tuple
     # Drop windows that span a data gap (exchange outage), including a gap between the signal bar and the entry
     # bar: signal + H hold bars must be consecutive in wall-clock time.
     if len(entries):
-        span = idx[entries + H] - idx[entries]
-        entries = entries[np.asarray(span <= H * tf)]
+        ns = idx.as_unit("ns").asi8
+        span = ns[entries + H] - ns[entries]
+        entries = entries[span <= H * tf.value]
     if len(entries) == 0:
         return {ex: pd.DataFrame(columns=TRADE_COLUMNS) for ex in exits}
     e = entries + 1
@@ -93,12 +96,14 @@ def simulate(df: pd.DataFrame, entries: np.ndarray, side: str, exits: list[tuple
         targeted = (k_t < k_s) & (k_t < H)
         k = np.where(stopped, k_s, np.where(targeted, k_t, H - 1))
         # one open trade at a time per configuration and asset
-        keep, busy_until = np.zeros(len(e), dtype=bool), -1
         exit_bar = e + k
-        for j in range(len(e)):
-            if e[j] > busy_until:
-                keep[j] = True
-                busy_until = exit_bar[j]
+        keep = np.ones(len(e), dtype=bool)
+        if non_overlapping:
+            keep[:], busy_until = False, -1
+            for j in range(len(e)):
+                if e[j] > busy_until:
+                    keep[j] = True
+                    busy_until = exit_bar[j]
         gap_open = W_o[rows, k]
         stop_fill = np.minimum(gap_open, stop) if side == "long" else np.maximum(gap_open, stop)
         exit_px = np.where(stopped, stop_fill, np.where(targeted, tp, last_close))

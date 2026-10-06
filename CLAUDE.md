@@ -117,5 +117,8 @@ Also: `decisions` (every candidate + rejection reason), `events`, `equity`, `llm
   the 12 intraday strategy families has an edge after costs. On Alpaca spot every strategy loses (round-trip fees
   0.6–0.8% exceed 1–4h moves); with perp fees the best are statistically insignificant. The pre-registered
   headline was "no trade". 2026 is now viewed: new searches need `--contaminated`; judge them on forward paper.
-- Next options (ask the user): longer holds (daily bars), lower costs (maker-only entries or a futures venue),
-  forward paper test of squeeze_breakout long 1h. Keep paper only; no live, no risk/leverage increases.
+- Research v2 (user's choice: holds ≤ 24h, honest one-shot, research-only venue): 17 families incl. tsmom,
+  xs_momentum, btc_lead, funding_contrarian (Binance USD-M funding), daily_reversal; 15m/1h/4h; exits with 8h/24h
+  holds; long+short. The user runs it locally: `research download` → `research search --refreeze --contaminated`
+  → commit frozen.json → `research test2026` → push. Do NOT tune on 2026 results: forward paper trading decides.
+  Keep paper only; no live, no risk/leverage increases.

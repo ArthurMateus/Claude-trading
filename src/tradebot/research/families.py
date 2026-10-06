@@ -6,6 +6,8 @@ are taken on the rising edge of the condition, at the next bar's open.
 
 Each family has a long and a short form. Short forms need a venue that allows shorting (perps); the bot's
 Alpaca spot venue is long-only. `live_ok=False` marks families needing data the live bot doesn't have.
+Families with `needs_ctx=True` also see the whole universe (closes of every coin) and perpetual funding rates
+through a context built by `build_context`, aligned so nothing is visible before it was known.
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ class Family:
     signal: Callable[..., pd.Series]           # signal(df, side, tf_minutes, **params) -> bool Series
     grid: dict[str, list] = field(default_factory=dict)
     live_ok: bool = True
+    needs_ctx: bool = False
 
     def param_sets(self) -> list[dict]:
         keys = list(self.grid)
@@ -43,6 +46,12 @@ def _htf_align(df: pd.DataFrame, values: pd.Series, htf_minutes: int, tf: int) -
     shifted = values.copy()
     shifted.index = values.index + pd.Timedelta(minutes=htf_minutes - tf)
     return shifted.reindex(df.index, method="ffill")
+
+
+def _zscore(s: pd.Series, window: int) -> pd.Series:
+    mu = s.rolling(window, min_periods=window // 2).mean()
+    sd = s.rolling(window, min_periods=window // 2).std()
+    return (s - mu) / sd.replace(0, np.nan)
 
 
 def _resample(df: pd.DataFrame, minutes: int, base: int) -> pd.DataFrame:
@@ -189,6 +198,86 @@ def taker_flow(df, side, tf, threshold, window_h):
     return (ratio < 1 - threshold) & (df["close"] < e20)
 
 
+# ---------------------------------------------------------------- universe-aware (cross-asset, funding)
+
+def build_context(data5: dict[str, pd.DataFrame], tf: int, funding: dict[str, pd.Series] | None = None) -> dict:
+    """Closes of every coin on `tf` bars, plus funding rates aligned to the bar on which they became known
+    (a settlement at T is usable from the bar that closes at or after T) and dropped when older than 16h."""
+    from .history import resample
+    closes = pd.DataFrame({a: resample(df, tf)["close"] for a, df in data5.items() if len(df)}).sort_index()
+    fund = None
+    if funding:
+        cols = {}
+        for a, s in funding.items():
+            if len(s):
+                shifted = s.copy()
+                shifted.index = s.index - pd.Timedelta(minutes=tf)
+                cols[a] = shifted.reindex(closes.index, method="ffill", tolerance=pd.Timedelta(hours=16))
+        fund = pd.DataFrame(cols, index=closes.index) if cols else None
+    return {"close": closes, "funding": fund, "tf": tf}
+
+
+def _col(ctx: dict, key: str, asset: str, index: pd.Index) -> pd.Series | None:
+    frame = ctx.get(key)
+    if frame is None or asset not in frame:
+        return None
+    return frame[asset].reindex(index)
+
+
+def tsmom(df, side, tf, lookback_h, z):
+    """Time-series momentum: the lookback return, scaled by its own volatility, beyond +/- z."""
+    n = _bars(tf, lookback_h * 60)
+    r = df["close"].pct_change(n)
+    vol = df["close"].pct_change().rolling(10 * n, min_periods=3 * n).std() * np.sqrt(n)
+    score = r / vol.replace(0, np.nan)
+    return (score > z) if side == "long" else (score < -z)
+
+
+def xs_momentum(df, side, tf, lookback_h, k, rebalance_h, ctx=None, asset=None):
+    """Cross-sectional momentum: at each rebalance, long the k strongest coins / short the k weakest."""
+    c = ctx["close"]
+    n = _bars(tf, lookback_h * 60)
+    ret = c / c.shift(n) - 1
+    rank = ret.rank(axis=1, ascending=False)            # 1 = strongest
+    count = ret.notna().sum(axis=1)
+    close_time = c.index + pd.Timedelta(minutes=tf)
+    rebalance = pd.Series((close_time.hour % rebalance_h == 0) & (close_time.minute == 0), index=c.index)
+    if asset not in rank:
+        return pd.Series(False, index=df.index)
+    picked = (rank[asset] <= k) if side == "long" else (rank[asset] > count - k)
+    cond = picked & rebalance & (count >= 2 * k + 1)
+    return cond.reindex(df.index).fillna(False)
+
+
+def btc_lead(df, side, tf, window_h, z, ctx=None, asset=None):
+    """BTC moves first: after an outsized BTC move, trade the alt that has not followed yet."""
+    if asset == "BTC/USD" or "BTC/USD" not in ctx["close"]:
+        return pd.Series(False, index=df.index)
+    n = _bars(tf, window_h * 60)
+    btc = ctx["close"]["BTC/USD"].reindex(df.index)
+    br, ar = btc.pct_change(n), df["close"].pct_change(n)
+    bz = _zscore(br, _bars(tf, 30 * 24 * 60))
+    if side == "long":
+        return (bz > z) & (ar < 0.5 * br)
+    return (bz < -z) & (ar > 0.5 * br)
+
+
+def funding_contrarian(df, side, tf, z, window_d, ctx=None, asset=None):
+    """Fade crowded leverage: unusually high funding (longs paying) -> short; unusually low -> long."""
+    f = _col(ctx, "funding", asset, df.index)
+    if f is None:
+        return pd.Series(False, index=df.index)
+    fz = _zscore(f, _bars(tf, window_d * 24 * 60))
+    return (fz < -z) if side == "long" else (fz > z)
+
+
+def daily_reversal(df, side, tf, z):
+    """Fade an extreme 24h move (z-scored against the last ~60 days)."""
+    r = df["close"].pct_change(_bars(tf, 24 * 60))
+    rz = _zscore(r, _bars(tf, 60 * 24 * 60))
+    return (rz < -z) if side == "long" else (rz > z)
+
+
 FAMILIES: dict[str, Family] = {f.name: f for f in [
     Family("donchian_breakout", "Close beyond the prior N-hour high/low, optional volume filter.",
            donchian_breakout, {"lookback_h": [4, 12, 24], "vol_z": [0.0, 1.5]}),
@@ -214,12 +303,23 @@ FAMILIES: dict[str, Family] = {f.name: f for f in [
            climax_reversal, {"vol_z": [2.5, 3.5], "wick": [0.5, 0.6]}),
     Family("taker_flow", "Aggressor (taker-buy) volume share beyond a threshold, with the EMA20 trend.",
            taker_flow, {"threshold": [0.55, 0.6], "window_h": [1, 4]}, live_ok=False),
+    Family("tsmom", "Time-series momentum: vol-scaled lookback return beyond a threshold.",
+           tsmom, {"lookback_h": [24, 72, 168], "z": [0.5, 1.5]}),
+    Family("xs_momentum", "Cross-sectional momentum: long the strongest / short the weakest coins at each rebalance.",
+           xs_momentum, {"lookback_h": [24, 72], "k": [1, 2], "rebalance_h": [8, 24]}, live_ok=False, needs_ctx=True),
+    Family("btc_lead", "After an outsized BTC move, trade alts that have not followed yet.",
+           btc_lead, {"window_h": [1, 4], "z": [1.5, 2.5]}, live_ok=False, needs_ctx=True),
+    Family("funding_contrarian", "Fade unusually high (short) or low (long) perpetual funding rates.",
+           funding_contrarian, {"z": [1.5, 2.5], "window_d": [7, 30]}, live_ok=False, needs_ctx=True),
+    Family("daily_reversal", "Fade an extreme 24h move relative to the last 60 days.",
+           daily_reversal, {"z": [2.0, 3.0]}),
 ]}
 
-TIMEFRAMES = [5, 15, 60]
+TIMEFRAMES = [15, 60, 240]
 SIDES = ["long", "short"]
-EXITS = [(1.0, 2.0), (1.5, 2.0), (1.5, 3.0), (2.0, 1.5)]   # (stop ATR multiple, reward:risk)
-MAX_HOLD_MINUTES = 240
+# (stop ATR multiple, reward:risk, max hold hours). 5m bars were dropped: the 2026 test showed fees dominate there.
+EXITS = [(1.0, 2.0, 8), (1.5, 2.0, 8), (2.0, 3.0, 24), (3.0, 10.0, 24)]
+MAX_HOLD_HOURS = 24
 
 
 def entry_edges(cond: pd.Series) -> np.ndarray:
@@ -229,6 +329,15 @@ def entry_edges(cond: pd.Series) -> np.ndarray:
     return np.flatnonzero(c & ~prev)
 
 
-def strategy_id(family: str, side: str, tf: int, params: dict, exit_: tuple[float, float]) -> str:
+def signal_for(fam: Family, d: pd.DataFrame, side: str, tf: int, params: dict, ctx: dict | None,
+               asset: str) -> pd.Series:
+    if fam.needs_ctx:
+        if ctx is None:
+            return pd.Series(False, index=d.index)
+        return fam.signal(d, side, tf, **params, ctx=ctx, asset=asset)
+    return fam.signal(d, side, tf, **params)
+
+
+def strategy_id(family: str, side: str, tf: int, params: dict, exit_: tuple) -> str:
     p = ",".join(f"{k}={v}" for k, v in params.items())
-    return f"{family}|{side}|{tf}m|{p}|stop{exit_[0]}xATR,rr{exit_[1]}"
+    return f"{family}|{side}|{tf}m|{p}|stop{exit_[0]}xATR,rr{exit_[1]},hold{exit_[2]}h"

@@ -24,6 +24,7 @@ TRAIN_START = datetime(2022, 1, 1, tzinfo=timezone.utc)
 VALIDATION_START = datetime(2025, 1, 1, tzinfo=timezone.utc)
 CACHE = ROOT / "data" / "history" / "binance"
 BASE_URL = "https://data.binance.vision/data/spot"
+FUTURES_URL = "https://data.binance.vision/data/futures/um"     # USD-M perpetuals (funding rates)
 COLUMNS = ["open_time", "open", "high", "low", "close", "volume", "close_time", "quote_volume", "trades",
            "taker_buy_base", "taker_buy_quote", "ignore"]
 
@@ -146,6 +147,61 @@ def test_files_cached_before(ts: datetime, assets: list[str], interval: str = "5
             if (y, m) >= (TEST_START.year, TEST_START.month) and p.stat().st_mtime < ts.timestamp():
                 out.append(str(p))
     return out
+
+
+# ---------------------------------------------------------------- perpetual funding rates
+
+def parse_funding_zip(raw: bytes) -> pd.Series:
+    """Binance USD-M fundingRate archive -> funding rate (fraction per interval) indexed by settlement time."""
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        with z.open(z.namelist()[0]) as f:
+            text = f.read().decode()
+    first = text.split("\n", 1)[0]
+    df = pd.read_csv(io.StringIO(text), header=0 if not first.split(",")[0].strip().isdigit() else None)
+    if df.columns[0] != "calc_time":
+        df.columns = ["calc_time", "funding_interval_hours", "last_funding_rate"][: len(df.columns)]
+    ts = df["calc_time"].astype("int64")
+    ts = ts.where(ts < 10**14, ts // 1000)
+    s = pd.Series(df["last_funding_rate"].astype(float).to_numpy(), index=pd.to_datetime(ts, unit="ms", utc=True))
+    s.index.name = "ts"
+    return s[~s.index.duplicated()].sort_index()
+
+
+def download_funding(asset: str, start: datetime, end: datetime, fetch: Fetch = http_fetch,
+                     cache: Path = CACHE) -> int:
+    """Monthly funding-rate archives (published after each month ends). Returns files fetched."""
+    sym = binance_symbol(asset)
+    folder = cache / "funding" / sym
+    folder.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc)
+    fetched = 0
+    for y, m in _months(start, end):
+        path = folder / f"{y:04d}-{m:02d}.parquet"
+        if path.exists() or (y, m) >= (now.year, now.month):
+            continue
+        try:
+            s = parse_funding_zip(fetch(f"{FUTURES_URL}/monthly/fundingRate/{sym}/{sym}-fundingRate-{y:04d}-{m:02d}.zip"))
+        except Exception as e:
+            log.warning("no funding data for %s %04d-%02d: %s", sym, y, m, e)
+            continue
+        s.to_frame("funding").to_parquet(path)
+        fetched += 1
+    return fetched
+
+
+def load_funding(asset: str, start: datetime, end: datetime, *, allow_test: bool = False,
+                 cache: Path = CACHE) -> pd.Series:
+    """Funding settlements in [start, end), with the same test-period guard as prices."""
+    if end > TEST_START and not allow_test:
+        raise LookaheadError(f"refusing to load funding after {TEST_START:%Y-%m-%d} before strategies are frozen")
+    folder = cache / "funding" / binance_symbol(asset)
+    parts = [pd.read_parquet(p)["funding"] for y, m in _months(start, end - pd.Timedelta(microseconds=1))
+             if (p := folder / f"{y:04d}-{m:02d}.parquet").exists()]
+    if not parts:
+        return pd.Series(dtype=float)
+    s = pd.concat(parts).sort_index()
+    s = s[~s.index.duplicated()]
+    return s[(s.index >= start) & (s.index < end)]
 
 
 def coverage(asset: str, interval: str = "5m", cache: Path = CACHE) -> Optional[tuple[str, str]]:

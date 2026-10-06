@@ -118,8 +118,9 @@ def write(out_dir: Path = RESULTS) -> Path:
     hs, hl = meta["headline_spec"], meta.get("headline")
     integrity = []
     if meta.get("contaminated"):
-        integrity.append("⚠️ **CONTAMINATED:** these strategies were searched after 2026 had already been viewed. "
-                         "Treat every number below as in-sample.")
+        integrity.append("⚠️ **CONTAMINATED:** this freeze was created after 2026 had already been viewed. The "
+                         "strategies were still selected only on 2022–2025, but the choice of families was made "
+                         "knowing earlier 2026 results, so 2026 is not a clean test. Forward paper trading is.")
     if meta.get("prior_2026_runs"):
         integrity.append(f"⚠️ 2026 was tested {meta['prior_2026_runs']} time(s) before this run "
                          "(research/test_ledger.jsonl).")
