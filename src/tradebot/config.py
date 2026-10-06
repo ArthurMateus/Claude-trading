@@ -158,7 +158,7 @@ def load_dotenv(path: Path = ROOT / ".env") -> None:
     """Minimal .env loader (no extra dependency). Existing env vars win."""
     if not path.exists():
         return
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -170,5 +170,5 @@ def load_dotenv(path: Path = ROOT / ".env") -> None:
 
 def load_settings(path: Path | str | None = None) -> Settings:
     p = Path(path) if path else DEFAULT_CONFIG
-    data = yaml.safe_load(p.read_text()) if p.exists() else {}
+    data = yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else {}
     return Settings.model_validate(data or {})
