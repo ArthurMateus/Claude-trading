@@ -1,8 +1,8 @@
 """The one-shot out-of-sample test: frozen strategies on 2026 data, across risk levels and leverage caps.
 
 Every run is appended to research/test_ledger.jsonl. Reported alongside each strategy:
-- a random-entry null: the same exits, side and timeframe on random entries at the same frequency per asset,
-  under the same costs; a strategy only shows edge if it beats this
+- a timing null: the strategy's own entries shifted together by a random number of whole days, under the same
+  exits and costs; a strategy only shows edge if it beats this
 - a split into Jan-Jun 2026 and Jul 2026-today: the strategy families were authored by a model whose training
   data reaches mid-2026, so the second half is the cleaner out-of-sample window
 """
@@ -18,7 +18,7 @@ import pandas as pd
 
 from ..config import ROOT
 from . import history
-from .engine import COST_MODELS, simulate, trade_stats
+from .engine import COST_MODELS, funding_paid, simulate, trade_stats
 from .portfolio import price_frame, simulate_portfolio
 from .search import (HEADLINE, generate, ledger_entries, load_frozen, load_funding, load_universe,
                      record_test_run)
@@ -37,36 +37,50 @@ MIN_TEST_TRADES = 40
 _resampled: dict[tuple[int, str, int], pd.DataFrame] = {}
 
 
-def null_expectancy(champion: dict, data: dict[str, pd.DataFrame], trades: pd.DataFrame, cm) -> tuple[float, float]:
-    """Mean and 95th percentile of net expectancy (bps) of random entries with the champion's exits, sampled
-    uniformly over the whole test window at the champion's per-asset trade count."""
+def null_expectancy(champion: dict, data: dict[str, pd.DataFrame], trades: pd.DataFrame, cm,
+                    funding: dict[str, pd.Series] | None = None) -> tuple[float, float]:
+    """Mean and 95th percentile of net expectancy (bps) when the champion's own entries are all shifted by the
+    same random whole number of days (wrapping within the test window) and re-priced with its exits. This keeps
+    the trade count per asset, time of day and cross-asset clustering, and removes only the timing skill."""
     tf, side = champion["tf"], champion["side"]
     stop, rr, hold = champion["exit"]
     exit_ = (stop, rr)
     H = max(1, int(hold) * 60 // tf)
+    start = pd.Timestamp(history.TEST_START)
+    end = max(df.index.max() for df in data.values()) + pd.Timedelta(minutes=5)
+    days = int((end - start) / pd.Timedelta(days=1))
+    per_day = 24 * 60 // tf
+    n_bars = days * per_day
+    if days < 2 or not len(trades):
+        return float("nan"), float("nan")
     rng = np.random.default_rng(zlib.crc32(champion["id"].encode()))
-    counts = trades["asset"].value_counts().to_dict()
-    sums, total = np.zeros(NULL_REPS), 0
-    for asset, n in counts.items():
+    offsets = rng.integers(1, days, size=NULL_REPS) * per_day
+    sums, counts = np.zeros(NULL_REPS), np.zeros(NULL_REPS)
+    bar = pd.Timedelta(minutes=tf)
+    for asset, g in trades.groupby("asset"):
         key = (id(data), asset, tf)
         if key not in _resampled:
             _resampled[key] = history.resample(data[asset], tf)
         d = _resampled[key]
-        pool = np.flatnonzero(d.index >= history.TEST_START)
-        if len(pool) == 0:
+        # A trade from every possible entry bar of the window, on a regular grid of bar positions.
+        t = simulate(d, np.flatnonzero(d.index >= start - bar), side, [exit_], H, asset, tf,
+                     non_overlapping=False)[exit_]
+        t = t[t["entry_ts"] >= start]
+        if not len(t):
             continue
-        # Every test-window bar as a possible entry, then n random draws per repetition (vectorized: one simulate
-        # per asset instead of one per repetition).
-        t = simulate(d, pool, side, [exit_], H, asset, tf, non_overlapping=False)[exit_]
-        if len(t) == 0:
-            continue
-        net = cm.net(t["gross"].to_numpy(), t["hours"].to_numpy(), t["asset"].to_numpy())
-        draws = rng.integers(0, len(net), size=(NULL_REPS, int(n)))
-        sums += net[draws].sum(axis=1)
-        total += int(n)
-    if total == 0:
+        t = t.assign(funding=funding_paid(t, (funding or {}).get(asset)))
+        grid = np.full(n_bars, np.nan)
+        pos = ((t["entry_ts"] - start) // bar).to_numpy(dtype=np.int64)
+        ok = pos < n_bars
+        grid[pos[ok]] = cm.net_trades(t)[ok]
+        own = ((g["entry_ts"] - start) // bar).to_numpy(dtype=np.int64)
+        vals = grid[(own[None, :] + offsets[:, None]) % n_bars]
+        sums += np.nansum(vals, axis=1)
+        counts += np.isfinite(vals).sum(axis=1)
+    valid = counts > 0
+    if not valid.any():
         return float("nan"), float("nan")
-    reps = sums / total * 1e4
+    reps = sums[valid] / counts[valid] * 1e4
     return float(np.mean(reps)), float(np.percentile(reps, 95))
 
 
@@ -94,10 +108,10 @@ def run(frozen: dict | None = None, loader=history.load, start_equity: float = 5
                    "val_pf": c["validation"]["profit_factor"], "val_t": c["validation"]["tstat"]}
             if len(t):
                 t = t.assign(strategy=c["id"])
-                net = cm.net(t["gross"].to_numpy(), t["hours"].to_numpy(), t["asset"].to_numpy())
+                net = cm.net_trades(t)
                 st = trade_stats(net, days=t["entry_ts"].dt.floor("D").to_numpy())
                 h2 = (t["entry_ts"] >= SECOND_HALF).to_numpy()
-                null_mean, null_p95 = null_expectancy(c, data, t, cm)
+                null_mean, null_p95 = null_expectancy(c, data, t, cm, funding)
                 row.update({"test_trades": st["trades"], "test_win_rate": st["win_rate"], "test_pf": st["profit_factor"],
                             "test_exp_bps": st["expectancy_bps"], "test_t": st["tstat"],
                             "exp_bps_jan_jun": float(net[~h2].mean() * 1e4) if (~h2).any() else float("nan"),
@@ -151,6 +165,8 @@ def run(frozen: dict | None = None, loader=history.load, start_equity: float = 5
             "test_files_cached_before_freeze": peeked_files or [], "headline_spec": headline,
             "beats_null": int(strategies.get("beats_null", pd.Series(dtype=bool)).fillna(False).astype(bool).sum()),
             "beats_null_expected_by_chance": round(0.05 * int((strategies.get("test_trades", pd.Series(dtype=float)) > 0).sum()), 1),
+            "funding_last_settlement": {a: str(f.index.max()) for a, f in funding.items()},
+            "val_false_passes_expected": round(0.00135 * len(champions), 2),
             "headline": hl.iloc[0].to_dict() if len(hl) else None}
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=1, default=str))
     entry = {"run_at": datetime.now(timezone.utc).isoformat(), "frozen_sha256": frozen["frozen_sha256"],

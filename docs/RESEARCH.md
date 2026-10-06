@@ -25,9 +25,10 @@ circuit breakers on. The report prints this first. Every other cell is sensitivi
 1. In-sample 2022–2024: ≥ 150 non-overlapping trades pooled over the 7 coins, profit factor ≥ 1.1 after costs,
    and positive expectancy in at least 2 of the 3 years. Among those, the highest **day-clustered** t-stat wins,
    so simultaneous BTC/ETH/SOL trades on one move don't count as independent evidence.
-2. Validation 2025: ≥ 100 trades, profit factor ≥ 1.1, positive expectancy **and** a day-clustered t-stat ≥ 2.
-   A PF-only gate lets 20–40% of zero-edge strategies through; this one lets roughly 2–3% through. Champions
-   that fail are still frozen and reported, flagged *not validated*.
+2. Validation 2025: ≥ 100 trades, profit factor ≥ 1.1, positive expectancy **and** a day-clustered t-stat ≥ 3
+   (v2; v1 used 2). With ~50 champions (family × side × venue), t ≥ 2 would pass one or two zero-edge
+   strategies by chance; t ≥ 3 passes about 0.07 in expectation. Champions that fail are still frozen and
+   reported, flagged *not validated*.
 
 Every champion is reported on 2026, including the failures, so the results can't be cherry-picked.
 
@@ -49,7 +50,7 @@ Every champion is reported on 2026, including the failures, so the results can't
 | taker_flow | aggressor (taker-buy) share of volume with the trend | threshold, window (Binance data only, not usable live on Alpaca) |
 
 Exits (v2): (stop ATR × reward:risk × max hold) = 1.0×2/8h, 1.5×2/8h, 2.0×3/24h, 3.0×10/24h (the last is
-effectively a 24h time exit with a wide stop). Each family has long and short forms. Shorts only exist on the
+in practice a 24h time exit with a wide stop: a 30-ATR target almost never fills in a day). Each family has long and short forms. Shorts only exist on the
 perp venue.
 
 New in v2:
@@ -63,13 +64,17 @@ New in v2:
 | daily_reversal | fade an extreme 24h move | z 2/3 |
 
 Funding rates come from Binance's monthly archives, which publish after each month ends. The current month has
-no funding data, so funding signals stop at the last published settlement plus 16h.
+no funding data, so funding signals stop at the last published settlement plus 16h (the report lists the last
+settlement per coin). Rates are converted to a per-8h basis for signals, since Binance moved many perps to 4h
+or 1h settlements.
 
 ## Costs and venues
 
 - `alpaca_spot`: 0.25% fee per side plus slippage of 0.05% (BTC, ETH) or 0.15% (thinner Alpaca books: SOL,
   LTC, LINK, AVAX, DOGE) per side, long-only, no leverage. This is what the bot trades today.
-- `perp`: 0.05% fee + 0.03% slippage per side, 0.01% funding per 8h held, long and short, leverage up to 20x.
+- `perp`: 0.05% fee + 0.03% slippage per side, plus the funding Binance actually settled while each trade was
+  open (longs pay positive rates, shorts receive them; 0.01% per 8h where no rate is published yet), long and
+  short, leverage up to 20x.
   Isolated-margin liquidation is modeled: margin = notional / leverage, lost if the move against the position
   reaches 1/leverage − 0.5% before the exit. **The bot cannot trade this venue yet.** These rows show what a
   futures account would have done.
@@ -77,11 +82,13 @@ no funding data, so funding signals stop at the last published settlement plus 1
 Fills are conservative: next-bar-open entries, the stop wins when stop and target touch in one bar, gaps through
 the stop fill at the worse open, and the take-profit never fills better than the target. Exits are timestamped
 at the close of their bar, so their P&L can't be reused early. Trades of one configuration on one asset never
-overlap, and windows that span exchange data gaps are dropped.
+overlap, windows that span exchange data gaps are dropped, and resampled bars missing more than 5% of their
+5-minute bars are discarded.
 
-**Every strategy is compared with a random-entry null:** the same exits, side and timeframe on random entries at
-the same per-asset frequency, under the same costs, 200 times, sampled across the whole window. `beats_null` means test expectancy above the
-null's 95th percentile; the report also says how many champions would beat it by pure chance (5%). Fewer than 40 test trades is flagged `noise`. Results are also split into **Jan–Jun** and
+**Every strategy is compared with a timing null:** its own 2026 entries, all shifted by one random whole number
+of days (wrapping within the window), re-priced with the same exits and costs, 200 times. That keeps trade
+counts, time of day and cross-asset clustering (xs_momentum and btc_lead enter many coins at once), and removes
+only the timing skill. `beats_null` means test expectancy above the null's 95th percentile; the report also says how many champions would beat it by pure chance (5%). Fewer than 40 test trades is flagged `noise`. Results are also split into **Jan–Jun** and
 **Jul–now 2026**; the second half is the cleaner window (see caveats).
 
 ## Risk × leverage
@@ -113,6 +120,8 @@ tradebot research status
 - **Model knowledge.** Claude's training data runs to mid-2026, so the strategy *families* were chosen by a
   model that has some knowledge of Jan–Jun 2026 markets. The parameter selection is mechanical and frozen, which
   limits but doesn't eliminate this. Judge mainly by the **Jul–now** columns.
+- **Survivorship.** The universe is today's Alpaca coins, so coins that collapsed (LUNA, FTT) are missing.
+  That mostly biases cross-sectional strategies like xs_momentum.
 - **Binance as proxy.** Binance USDT spot prices stand in for Alpaca's USD pairs. Price paths match closely, but
   Alpaca's own books are thinner and real slippage may be higher than modeled.
 - **Intra-bar extremes** between 5-minute closes aren't in the drawdown (they are in each trade's liquidation

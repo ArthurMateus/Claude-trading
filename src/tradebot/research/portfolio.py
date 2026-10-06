@@ -71,7 +71,7 @@ def simulate_portfolio(trades: pd.DataFrame, cm: CostModel, risk_pct: float, lev
     col = {a: j for j, a in enumerate(prices.columns)}
     liq_dist = 1 / lev - MAINTENANCE if lev > 1 else math.inf
 
-    net = cm.net(t["gross"].to_numpy(), t["hours"].to_numpy(), t["asset"].to_numpy()) if len(t) else np.array([])
+    net = cm.net_trades(t)
     rt_cost = cm.round_trip_bps(t["asset"].to_numpy()) / 1e4 if len(t) else np.array([])
     entry_pos = clock.searchsorted(t["entry_ts"].to_numpy()) if len(t) else np.array([], dtype=int)
     exit_pos = clock.searchsorted(t["exit_ts"].to_numpy()) if len(t) else np.array([], dtype=int)

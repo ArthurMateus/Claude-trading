@@ -39,8 +39,20 @@ class CostModel:
     def round_trip_bps(self, assets) -> np.ndarray:
         return 2 * (self.fee_bps + self.slippage(assets))
 
-    def net(self, gross: np.ndarray, hours: np.ndarray, assets) -> np.ndarray:
-        return gross - self.round_trip_bps(assets) / 1e4 - self.funding_bps_8h / 1e4 * hours / 8
+    def net(self, gross: np.ndarray, hours: np.ndarray, assets, funding: np.ndarray | None = None) -> np.ndarray:
+        """Net return per trade. On a funded venue, `funding` (the signed rates actually settled while the trade
+        was open, positive = paid) replaces the flat estimate wherever it is known."""
+        flat = self.funding_bps_8h / 1e4 * np.asarray(hours, dtype=float) / 8
+        if self.funding_bps_8h and funding is not None:
+            funding = np.asarray(funding, dtype=float)
+            flat = np.where(np.isfinite(funding), funding, flat)
+        return gross - self.round_trip_bps(assets) / 1e4 - (flat if self.funding_bps_8h else 0.0)
+
+    def net_trades(self, t: pd.DataFrame) -> np.ndarray:
+        if not len(t):
+            return np.array([])
+        return self.net(t["gross"].to_numpy(), t["hours"].to_numpy(), t["asset"].to_numpy(),
+                        t["funding"].to_numpy() if "funding" in t else None)
 
 
 # Alpaca's books outside BTC/ETH are thin: 15 bps slippage per side there, 5 bps on BTC/ETH.
@@ -48,6 +60,23 @@ ALPACA_SPOT = CostModel("alpaca_spot", fee_bps=25, slippage_bps=15, funding_bps_
                         allow_short=False, slippage_overrides=(("BTC/USD", 5.0), ("ETH/USD", 5.0)))
 PERP = CostModel("perp", fee_bps=5, slippage_bps=3, funding_bps_8h=1.0, max_leverage=20, allow_short=True)
 COST_MODELS = {m.name: m for m in (ALPACA_SPOT, PERP)}
+
+def funding_paid(trades: pd.DataFrame, rates: pd.Series | None) -> np.ndarray:
+    """Signed funding a position paid (positive) or received over its life: every settlement after entry up to
+    and including exit, longs pay positive rates. NaN when the rate history doesn't cover the trade."""
+    out = np.full(len(trades), np.nan)
+    if rates is None or not len(rates) or not len(trades):
+        return out
+    ts = rates.index.as_unit("ns").asi8
+    cs = np.concatenate([[0.0], np.cumsum(rates.to_numpy(dtype=float))])
+    entry = pd.DatetimeIndex(trades["entry_ts"]).as_unit("ns").asi8
+    exit_ = pd.DatetimeIndex(trades["exit_ts"]).as_unit("ns").asi8
+    paid = cs[np.searchsorted(ts, exit_, "right")] - cs[np.searchsorted(ts, entry, "right")]
+    sgn = np.where(trades["side"].to_numpy() == "long", 1.0, -1.0)
+    covered = (entry >= ts[0]) & (exit_ <= ts[-1] + pd.Timedelta(hours=8).value)
+    out[covered] = (sgn * paid)[covered]
+    return out
+
 
 TRADE_COLUMNS = ["asset", "entry_ts", "exit_ts", "exit_bar_ts", "side", "entry", "exit", "stop_frac", "gross",
                  "hours", "mae", "exit_reason"]

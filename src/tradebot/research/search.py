@@ -25,7 +25,7 @@ import pandas as pd
 
 from ..config import ROOT
 from . import history
-from .engine import COST_MODELS, simulate, trade_stats
+from .engine import COST_MODELS, funding_paid, simulate, trade_stats
 from .families import EXITS, FAMILIES, SIDES, TIMEFRAMES, build_context, entry_edges, signal_for, strategy_id
 
 log = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ LEDGER_PATH = ROOT / "research" / "test_ledger.jsonl"
 SOURCE_FILES = ["families.py", "engine.py", "history.py", "search.py", "portfolio.py", "test2026.py",
                 "../indicators.py"]
 RULES = {"train_min_trades": 150, "train_min_pf": 1.1, "train_min_positive_years": 2,
-         "val_min_trades": 100, "val_min_pf": 1.1, "val_min_expectancy_bps": 0.0, "val_min_tstat": 2.0}
+         "val_min_trades": 100, "val_min_pf": 1.1, "val_min_expectancy_bps": 0.0, "val_min_tstat": 3.0}
 # Pre-registered headline result (chosen before testing): the venue the bot trades, validated strategies only,
 # base risk, no leverage, with circuit breakers. Every other cell of the report is sensitivity analysis.
 HEADLINE = {"cost_model": "alpaca_spot", "portfolio": "validated", "risk_pct": 1, "leverage": 1, "guardrails": True}
@@ -107,7 +107,8 @@ def generate(data: dict[str, pd.DataFrame], configs: list[dict] | None = None,
                             if keep_from is not None:
                                 trades = trades[trades["entry_ts"] >= keep_from]
                             if len(trades):
-                                out[ids[ex]].append(trades)
+                                rates = (funding or {}).get(asset)
+                                out[ids[ex]].append(trades.assign(funding=funding_paid(trades, rates)))
     return {k: pd.concat(v, ignore_index=True).sort_values("entry_ts", ignore_index=True) for k, v in out.items()}
 
 
@@ -149,7 +150,7 @@ def select(trades: dict[str, pd.DataFrame]) -> dict:
             scored = []
             for sid in sids:
                 t = trades[sid]
-                net = cm.net(t["gross"].to_numpy(), t["hours"].to_numpy(), t["asset"].to_numpy())
+                net = cm.net_trades(t)
                 train = (t["entry_ts"] < history.VALIDATION_START).to_numpy()
                 years = t["entry_ts"].dt.year.to_numpy()
                 days = t["entry_ts"].dt.floor("D").to_numpy()
