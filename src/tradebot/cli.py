@@ -8,6 +8,10 @@
   tradebot reset-halt            clear a persisted HALT (human action)
   tradebot llm-check             one tiny AI call to confirm your Claude subscription login works
   tradebot notify-test           send a test message to the Discord webhook
+  tradebot research download     Binance 5m history 2022-2025 (no 2026 data) into data/history/
+  tradebot research search       design on 2022-2024, select on 2025, freeze research/frozen.json
+  tradebot research test2026     one-shot out-of-sample test of the frozen strategies on 2026
+  tradebot research status       cached history and frozen state
 Global flags: --config PATH, --offline (no LLM calls; deterministic heuristics), --mode simulated|paper|live
 """
 from __future__ import annotations
@@ -80,6 +84,45 @@ def cmd_report(p: Pipeline) -> None:
               f"ret={t.actual_return_pct or 0:+.2f}% slip={t.slippage_bps or 0:.1f}bps  {t.exit_reason}")
 
 
+def cmd_research(args) -> None:
+    from datetime import datetime, timezone
+
+    from .research import history, search, test2026
+    s = load_settings(args.config)
+    assets = s.universe
+    if args.action == "download":
+        for a in assets:
+            n = history.download(a, history.TRAIN_START, datetime(2025, 12, 31, tzinfo=timezone.utc))
+            print(f"{a}: {n} new monthly files, coverage {history.coverage(a)}")
+    elif args.action == "status":
+        for a in assets:
+            print(f"{a}: {history.coverage(a)}")
+        if search.FROZEN_PATH.exists():
+            f = search.load_frozen(check_source=False)
+            ok = f["source_sha256"] == search.source_hash()
+            print(f"frozen {f['created_at']} sha256={f['frozen_sha256'][:12]} champions={len(f['champions'])} "
+                  f"validated={sum(c['validated'] for c in f['champions'])} code_unchanged={ok}")
+        else:
+            print("not frozen yet")
+    elif args.action == "search":
+        if search.FROZEN_PATH.exists() and not args.refreeze:
+            sys.exit("research/frozen.json exists; the 2026 test must use it. Pass --refreeze to discard it.")
+        body = search.run_search(assets)
+        for c in body["champions"]:
+            print(f"{'VALID' if c['validated'] else '     '} {c['cost_model']:11} {c['id']:80} "
+                  f"train PF {c['train']['profit_factor']:.2f} val PF {c['validation']['profit_factor']:.2f}")
+        print(f"frozen -> {search.FROZEN_PATH} ({body['frozen_sha256'][:12]})")
+    elif args.action == "test2026":
+        frozen = search.load_frozen()
+        end = datetime.now(timezone.utc)
+        for a in frozen["assets"]:
+            history.download(a, history.TEST_START - test2026.WARMUP, end)
+        res = test2026.run(frozen)
+        from .research import report
+        print(json.dumps(res["meta"], indent=1))
+        print(f"report: {report.write()}")
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="tradebot")
     ap.add_argument("--config")
@@ -95,6 +138,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("reset-halt")
     sub.add_parser("llm-check")
     sub.add_parser("notify-test")
+    rs = sub.add_parser("research")
+    rs.add_argument("action", choices=["download", "search", "test2026", "status"])
+    rs.add_argument("--refreeze", action="store_true", help="discard research/frozen.json and search again")
     ex = sub.add_parser("export")
     ex.add_argument("path", nargs="?", default="data/trades.csv")
     args = ap.parse_args(argv)
@@ -105,6 +151,10 @@ def main(argv: list[str] | None = None) -> None:
         handlers.append(RotatingFileHandler(args.log_file, maxBytes=10_000_000, backupCount=5))
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, handlers=handlers,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if args.cmd == "research":
+        load_dotenv()
+        cmd_research(args)
+        return
     p = build(args)
     if args.cmd == "validate":
         for name, r in p.backtester.validate(p.provider).items():

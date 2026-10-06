@@ -7,4 +7,5 @@ data/*.sqlite*
 data/*.csv
 .pytest_cache/
 data/replication_feed.json
+data/history/
 data/*.log*

@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+research = ["pyarrow>=15", "matplotlib>=3.8"]
 
 [project.scripts]
 tradebot = "tradebot.cli:main"
