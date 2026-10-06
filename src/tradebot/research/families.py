@@ -201,7 +201,7 @@ def taker_flow(df, side, tf, threshold, window_h):
 # ---------------------------------------------------------------- universe-aware (cross-asset, funding)
 
 def build_context(data5: dict[str, pd.DataFrame], tf: int, funding: dict[str, pd.Series] | None = None) -> dict:
-    """Closes of every coin on `tf` bars, plus funding rates aligned to the bar on which they became known
+    """Closes of every coin on `tf` bars, plus funding rates (per 8h) aligned to the bar on which they became known
     (a settlement at T is usable from the bar that closes at or after T) and dropped when older than 16h."""
     from .history import resample
     closes = pd.DataFrame({a: resample(df, tf)["close"] for a, df in data5.items() if len(df)}).sort_index()
@@ -210,7 +210,10 @@ def build_context(data5: dict[str, pd.DataFrame], tf: int, funding: dict[str, pd
         cols = {}
         for a, s in funding.items():
             if len(s):
-                shifted = s.copy()
+                # Binance moved many perps from 8h to 4h/1h settlements: express every rate per 8h so the
+                # z-scores don't jump when the interval changes.
+                spacing = pd.Series(s.index, index=s.index).diff().dt.total_seconds().div(3600)
+                shifted = s * 8 / spacing.fillna(8).clip(1, 8)
                 shifted.index = s.index - pd.Timedelta(minutes=tf)
                 cols[a] = shifted.reindex(closes.index, method="ffill", tolerance=pd.Timedelta(hours=16))
         fund = pd.DataFrame(cols, index=closes.index) if cols else None

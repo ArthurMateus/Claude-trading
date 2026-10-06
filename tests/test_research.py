@@ -349,30 +349,75 @@ def test_signal_to_entry_gap_drops_the_trade():
     assert len(trades) == 1 and trades["entry_ts"].iloc[0] == df.index[41]
 
 
-def test_null_samples_the_whole_test_window():
+def _periodic_5m(days_before=130, days=270, seed=1, periodic=True):
     from datetime import timedelta
-    from tradebot.research import test2026
-    idx = pd.date_range(history.TEST_START - timedelta(days=130), periods=(130 + 270) * 288, freq="5min")
-    rng = np.random.default_rng(1)
-    c = 100 * np.exp(np.cumsum(rng.normal(0, 0.001, len(idx))))
-    df5 = pd.DataFrame({"open": c, "high": c * 1.002, "low": c * 0.998, "close": c, "volume": 1.0}, index=idx)
-    champion = {"id": "x", "tf": 60, "side": "long", "exit": [1.5, 2.0, 4]}
-    seen = []
-    orig = test2026.simulate
+    idx = pd.date_range(history.TEST_START - timedelta(days=days_before), periods=(days_before + days) * 288,
+                        freq="5min")
+    rng = np.random.default_rng(seed)
+    if periodic:      # the same intraday path every day: +1% during 10:00-11:00 UTC, flat otherwise
+        step = np.where(idx.hour == 10, 0.01 / 12, 0.0)
+    else:
+        step = rng.normal(0, 0.002, len(idx))
+    c = 100 * np.exp(np.cumsum(step))
+    o = np.concatenate([[c[0]], c[:-1]])
+    return pd.DataFrame({"open": o, "high": np.maximum(o, c) * 1.0005, "low": np.minimum(o, c) * 0.9995,
+                         "close": c, "volume": 1.0}, index=idx)
 
-    def spy(d, ent, *a, **k):
-        out = orig(d, ent, *a, **k)
-        seen.extend(out[(1.5, 2.0)]["entry_ts"].tolist())
-        return out
-    test2026.simulate = spy
-    try:
-        trades = pd.DataFrame({"asset": ["BTC/USD"] * 30})
-        test2026.NULL_REPS, reps = 5, test2026.NULL_REPS
-        test2026.null_expectancy(champion, {"BTC/USD": df5}, trades, PERP)
-    finally:
-        test2026.simulate, test2026.NULL_REPS = orig, reps
-    span = (idx[-1] - history.TEST_START)
-    assert max(seen) - history.TEST_START > 0.9 * span
+
+def test_timing_null_keeps_time_of_day():
+    from tradebot.research import test2026
+    df5 = _periodic_5m()
+    d = history.resample(df5, 60)
+    sig = np.flatnonzero((d.index >= history.TEST_START) & (d.index.hour == 9))[5:60:2]   # enter at 10:00
+    t = simulate(d, sig, "long", [(1.5, 2.0)], 1, "BTC/USD", 60)[(1.5, 2.0)]
+    strat = PERP.net_trades(t).mean() * 1e4
+    assert strat > 10
+    null_mean, _ = test2026.null_expectancy({"id": "x", "tf": 60, "side": "long", "exit": [1.5, 2.0, 1]},
+                                            {"BTC/USD": df5}, t, PERP)
+    assert null_mean == pytest.approx(strat, abs=1.0)     # same hour of day, so no timing skill to find
+
+
+def test_timing_null_rejects_luck_and_flags_skill():
+    from tradebot.research import test2026
+    df5 = _periodic_5m(periodic=False, seed=3)
+    d = history.resample(df5, 60)
+    test = np.flatnonzero(d.index >= history.TEST_START)[:-2]
+    nxt = d["close"].to_numpy()[test + 1] / d["open"].to_numpy()[test + 1] - 1
+    best = np.sort(test[np.argsort(nxt)[-40:]])                            # perfect foresight entries
+    champion = {"id": "x", "tf": 60, "side": "long", "exit": [3.0, 10.0, 1]}
+    t = simulate(d, best, "long", [(3.0, 10.0)], 1, "BTC/USD", 60)[(3.0, 10.0)]
+    strat = PERP.net_trades(t).mean() * 1e4
+    null_mean, null_p95 = test2026.null_expectancy(champion, {"BTC/USD": df5}, t, PERP)
+    assert strat > null_p95 > null_mean
+    assert abs(null_mean) < 20
+
+
+def test_funding_paid_uses_settlements_while_open():
+    from tradebot.research.engine import funding_paid
+    rates = pd.Series(0.001, index=pd.date_range("2025-03-01", periods=12, freq="8h", tz="UTC"))
+    ts = lambda h: pd.Timestamp("2025-03-01", tz="UTC") + pd.Timedelta(hours=h)
+    trades = pd.DataFrame({"entry_ts": [ts(7), ts(7), ts(8), ts(90)], "exit_ts": [ts(17), ts(17), ts(16), ts(99)],
+                           "side": ["long", "short", "long", "long"]})
+    paid = funding_paid(trades, rates)
+    assert paid[:3].tolist() == pytest.approx([0.002, -0.002, 0.001])   # 08:00+16:00; received; 16:00 only
+    assert np.isnan(paid[3])                                              # beyond the published rates
+    t = trades.assign(gross=0.0, hours=10.0, asset="BTC/USD", funding=paid)
+    net = PERP.net_trades(t)
+    rt = PERP.round_trip_bps(["BTC/USD"])[0] / 1e4
+    assert net[0] == pytest.approx(-rt - 0.002) and net[1] == pytest.approx(-rt + 0.002)
+    assert net[3] == pytest.approx(-rt - PERP.funding_bps_8h / 1e4 * 10 / 8)   # flat fallback
+    assert ALPACA_SPOT.net_trades(t)[0] == pytest.approx(-ALPACA_SPOT.round_trip_bps(["BTC/USD"])[0] / 1e4)
+
+
+def test_funding_rates_are_normalized_per_8h():
+    from tradebot.research.families import build_context
+    eight = pd.date_range("2025-03-01", periods=30, freq="8h", tz="UTC")
+    four = pd.date_range(eight[-1] + pd.Timedelta(hours=4), periods=60, freq="4h", tz="UTC")
+    rates = pd.concat([pd.Series(1e-4, index=eight), pd.Series(5e-5, index=four)])
+    idx = pd.date_range("2025-03-01", "2025-03-30", freq="5min", tz="UTC", inclusive="left")
+    df5 = pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}, index=idx)
+    f = build_context({"BTC/USD": df5}, 60, {"BTC/USD": rates})["funding"]["BTC/USD"].dropna()
+    assert f.iloc[1:].to_numpy() == pytest.approx(1e-4)
 
 
 def test_report_handles_a_run_where_no_portfolio_qualified(tmp_path):

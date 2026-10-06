@@ -156,7 +156,12 @@ def write(out_dir: Path = RESULTS) -> Path:
         f"{meta['source_sha256'][:12]}…`) after searching **{meta['configs_searched']} configurations** on "
         "2022–2024 and selecting on 2025.",
         "- Costs: `alpaca_spot` = 0.25% fee + slippage 0.05% (BTC/ETH) or 0.15% (others) per side, long-only, 1x. "
-        "`perp` = 0.05% fee + 0.03% slippage per side + 0.01%/8h funding, long+short, ≤ 20x, liquidation modeled.",
+        "`perp` = 0.05% fee + 0.03% slippage per side + the Binance funding actually settled while each trade was "
+        "open (0.01%/8h where no rate is published yet), long+short, ≤ 20x, liquidation modeled.",
+        f"- 2025 validation needs a day-clustered t ≥ 3 (about {meta.get('val_false_passes_expected', '?')} "
+        "champions would pass by chance). The exit `stop3.0xATR,rr10,hold24h` is in practice a 24h time exit.",
+        "- Survivorship: the universe is today's Alpaca coins, so coins that collapsed (LUNA, FTT) are missing; "
+        "this flatters shorts less than longs but biases cross-sectional strategies.",
         "- Drawdowns are mark-to-market on 5-minute closes; one position per asset; max 8 positions.",
         "- \"Circuit breakers\" = no new entries after a 5% daily loss, and close everything + stop at a 15% "
         "drawdown. The bot's other limits (calibrated sizing, 6% heat cap, 30% notional cap) are NOT applied "
@@ -167,7 +172,9 @@ def write(out_dir: Path = RESULTS) -> Path:
         f"**{meta.get('beats_null', 0)} champion(s) beat the random-entry null; about "
         f"{meta.get('beats_null_expected_by_chance', 0)} would by pure chance** (5% of those with test trades).",
         "",
-        "`beats_null` = test expectancy above the 95th percentile of 200 random-entry runs with the same exits. "
+        "`beats_null` = test expectancy above the 95th percentile of 200 runs of the same strategy with all its "
+        "entries shifted by one random number of whole days (same exits, trade counts, time of day and "
+        "cross-asset clustering). "
         "`noise` = fewer than 40 test trades. Jan–Jun vs Jul–now: the families were designed by a model with "
         "training data to mid-2026, so Jul–now is the cleaner window.",
         "",
