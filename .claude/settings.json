@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m pytest:*)",
+      "Bash(pytest:*)",
+      "Bash(tradebot --mode simulated:*)",
+      "Bash(tradebot report:*)",
+      "Bash(tradebot validate:*)",
+      "Bash(PYTHONPATH=src python3 -m tradebot.cli --mode simulated:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Edit(./.env)",
+      "Bash(tradebot --mode live:*)",
+      "Bash(PYTHONPATH=src python3 -m tradebot.cli --mode live:*)",
+      "Bash(tradebot reset-halt:*)"
+    ]
+  }
+}

@@ -1,0 +1,63 @@
+# Handoff prompt
+
+Copy everything inside the block below into a new Claude Code session (any account) that has access to
+`ArthurMateus/Claude-trading`. It is self-contained; the repo's `CLAUDE.md` and `.claude/` folder carry the rest.
+
+```text
+You are continuing work on "tradebot", my multi-agent Claude crypto swing-trading bot.
+
+Repo: https://github.com/ArthurMateus/Claude-trading
+Branch with the v0.1 build: claude/trusting-noether-rb2slp (merge it to main first or keep working on it).
+
+Start by reading, in this order: CLAUDE.md, docs/ASSESSMENT.md, docs/ARCHITECTURE.md, docs/AGENTS.md,
+docs/SDLC.md, docs/OPEN_QUESTIONS.md. Then run:
+  pip install -e ".[dev]" && python3 -m pytest -q          (24 tests must pass, offline)
+  tradebot --mode simulated --offline cycle                 (offline smoke run)
+
+WHAT IT IS
+- 15 agents: Orchestrator (Opus 5.5), Market Data, News, Technical, Quant, Fundamental, Flow,
+  Strategy-Replication, Backtest, Paper-Trading, Risk, Portfolio, Execution, Kill-Switch, Post-Trade.
+- Pipeline every 5 min: Market Data -> manage open positions -> Kill-Switch -> intelligence layer (only for assets
+  where a backtest-validated setup fires) -> Orchestrator fusion -> Risk (LLM + hard guardrails in code) ->
+  Portfolio -> guardrail re-check -> Execution (IOC limit + resting broker stop) -> SQLite journal ->
+  Post-Trade attribution/lessons -> bounded learning loop.
+- Python 3.11, SQLite journal (data/journal.sqlite), Alpaca crypto (paper), Anthropic SDK with structured
+  outputs, refusal fallback ("fallbacks": "default") on Opus/Sonnet 5.5, prompt caching, daily LLM budget.
+
+DECISIONS I ALREADY MADE (don't re-ask)
+- Crypto first; Alpaca; paper first, live only after the paper gate + my explicit env-var acknowledgement.
+- Risk per trade 1-5% depending on confidence, but EARNED: 1% until a confidence bucket proves calibration
+  over 30+ trades. Daily loss limit 5% (stop entries for the day). Max drawdown 15% -> HALT + flatten.
+- Max 5-8 open positions (cap 8). Portfolio heat cap 6% of equity, also capped by today's remaining
+  loss budget; correlated assets count as one cluster (5% cap).
+- LLM "Option 3": Opus 5.5 orchestrator; cheaper models (Haiku 4.5 / Sonnet 5.5) for every sub-agent. Hard
+  limits stay in code; LLMs can only make safety decisions stricter.
+- Holding period: minutes to max 4 hours. Spot, long-only (Alpaca crypto can't short).
+
+AFTER EVERY TRADE THE JOURNAL STORES
+Timestamp, Asset, Entry, Exit, Position size, Agents that agreed, Agents that disagreed, Confidence, Reason for
+trade, Expected return, Actual return, Market conditions, Slippage, Result (plus stops, fees, R-multiple, exit
+reason, attribution, lessons). Export with: tradebot export data/trades.csv
+
+RULES FOR YOU
+- Follow CLAUDE.md invariants. Never enable live trading, never raise risk limits, never read .env.
+- Every behavior change needs tests; keep pytest green. Use the .claude sub-agents: risk-reviewer for anything
+  touching guardrails/risk/kill-switch/execution/brokers/limits; quant-validator for setups/backtests;
+  agent-builder to add or modify agents. Skills: backtest-gate, weekly-review, add-setup.
+- Ask me before deciding anything listed in docs/OPEN_QUESTIONS.md.
+
+CURRENT STATUS
+- v0.1 complete and tested offline. NOT yet done: first real Alpaca paper run (the Alpaca adapter is untested
+  against the live API), data sources for the Fundamental / Replication / derivatives-flow agents, alerts, and
+  a 24/7 host.
+- The 3 starter setups (momentum_breakout, mean_reversion, trend_pullback) FAIL the backtest gate on
+  random-walk data once fees are included. Real profitability depends on better setups validated on real data.
+
+NEXT STEPS
+1. Ask me the top open questions in docs/OPEN_QUESTIONS.md (account size, alerts, hosting, news/flow data
+   sources, which traders to replicate, my own setup ideas).
+2. With my Alpaca paper keys in .env: run `tradebot validate` on real history and report with the
+   backtest-gate skill.
+3. Do one supervised `tradebot cycle` in paper mode, fix anything in the Alpaca adapter, then start `tradebot run`.
+4. Weekly: run the weekly-review skill and propose changes as PRs.
+```

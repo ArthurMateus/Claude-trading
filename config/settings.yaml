@@ -1,0 +1,105 @@
+# Tradebot configuration. Every number here is a decision — see docs/OPEN_QUESTIONS.md
+# for the ones that are still provisional. Guardrail values (risk:, kill_switch:) can only be
+# changed by a human; Claude-authored PRs that touch them must be flagged (see CLAUDE.md).
+
+mode: paper                  # simulated | paper | live
+broker: alpaca               # alpaca | simulated
+data_provider: alpaca        # alpaca | synthetic
+journal_path: data/journal.sqlite
+
+universe:                    # Alpaca crypto pairs (spot, long-only, no margin)
+  - BTC/USD
+  - ETH/USD
+  - SOL/USD
+  - LTC/USD
+  - LINK/USD
+  - AVAX/USD
+  - DOGE/USD
+
+cycle_interval_seconds: 300  # one full pipeline pass every 5 minutes
+bar_timeframe_minutes: 5
+bars_lookback: 300           # bars fetched per asset per cycle (~25h of 5m bars)
+max_hold_minutes: 240        # time-stop: no position is held longer than 4h
+
+risk:                        # HARD guardrails, enforced in code (guardrails.py). LLMs cannot exceed these.
+  base_risk_pct: 1.0         # risk per trade until a confidence bucket "earns" more (see calibration)
+  max_risk_pct: 5.0          # absolute ceiling per trade, only reachable by a calibrated bucket
+  daily_loss_limit_pct: 5.0  # realized+unrealized loss for the UTC day -> no new entries today
+  max_drawdown_pct: 15.0     # from peak equity -> HARD HALT + flatten, human reset required
+  max_portfolio_heat_pct: 6.0  # sum of (entry-stop)*qty across open positions / equity
+  heat_respects_daily_limit: true  # also cap heat at today's remaining loss budget (<= 5%), so all stops
+                                   # hitting at once can't breach the daily limit
+  max_cluster_risk_pct: 5.0  # same cap applied to a correlated cluster (e.g. BTC+ETH)
+  correlation_threshold: 0.7 # 24h return correlation above this => same cluster
+  max_open_positions: 8
+  min_reward_risk: 1.5
+  max_spread_bps: 15
+  max_position_notional_pct: 30   # no single position > 30% of equity (spot crypto = no leverage)
+  max_entry_slippage_bps: 20      # marketable-limit cap above the ask
+  min_order_notional_usd: 10
+  min_confidence: 0.55       # orchestrator confidence below this => no trade
+  allow_short: false         # Alpaca crypto is spot-only; shorting is not possible there
+
+calibration:                 # "earned" sizing: risk above base_risk_pct must be proven by the journal
+  bucket_edges: [0.55, 0.65, 0.75, 0.85, 1.0]
+  min_trades_per_bucket: 30
+  tolerance: 0.05            # realized win rate may lag predicted confidence by at most this much
+
+kill_switch:
+  max_consecutive_losses: 5
+  loss_streak_cooldown_minutes: 120
+  max_data_staleness_seconds: 900
+  max_api_errors_per_hour: 10
+  max_avg_slippage_bps: 30   # rolling mean over last 5 fills
+  max_orders_per_hour: 30
+  llm_review: true           # a cheap model may ESCALATE (never relax) to pause entries
+
+costs:                       # used by the simulator and the backtester; check Alpaca's current fee tier
+  taker_fee_bps: 25
+  maker_fee_bps: 15
+  sim_slippage_bps: 5
+
+validation:                  # Backtest gate a setup must pass before the bot may trade it
+  lookback_days: 60
+  min_trades: 40
+  min_profit_factor: 1.2
+  min_expectancy_bps: 5      # average net return per trade, after fees and slippage
+  max_drawdown_pct: 15.0     # simulated at base_risk_pct per trade
+  max_age_hours: 168         # re-validate weekly
+
+promotion:                   # Paper-Trading gate before any live capital
+  min_trades: 100
+  min_days: 28
+  min_profit_factor: 1.2
+  max_drawdown_pct: 10.0
+  max_slippage_vs_model_bps: 10
+
+llm:
+  daily_budget_usd: 15.0     # spend above this => LLM calls stop, agents abstain, no new entries
+  prefilter_min_abs_score: 0.15  # Opus is only consulted when the cheap agents agree at least this much
+  orchestrator: {model: claude-opus-5-5, effort: high, max_tokens: 16000}
+  agents:                    # Option 3: Opus orchestrates, cheaper models run every sub-agent
+    market_data: {model: claude-haiku-4-5, max_tokens: 2000}
+    news:        {model: claude-haiku-4-5, max_tokens: 2000}
+    technical:   {model: claude-haiku-4-5, max_tokens: 2000}
+    flow:        {model: claude-haiku-4-5, max_tokens: 2000}
+    quant:       {model: claude-sonnet-5-5, effort: low, max_tokens: 4000}
+    fundamental: {model: claude-sonnet-5-5, effort: low, max_tokens: 4000}
+    replication: {model: claude-sonnet-5-5, effort: low, max_tokens: 4000}
+    risk:        {model: claude-sonnet-5-5, effort: medium, max_tokens: 6000}
+    portfolio:   {model: claude-sonnet-5-5, effort: low, max_tokens: 4000}
+    execution:   {model: claude-haiku-4-5, max_tokens: 1500}
+    kill_switch: {model: claude-haiku-4-5, max_tokens: 1500}
+    post_trade:  {model: claude-sonnet-5-5, effort: medium, max_tokens: 6000}
+
+fusion_weights:              # starting trust per agent; the learning loop adjusts within [0.25, 2.0]
+  technical: 1.0
+  quant: 1.0
+  news: 0.7
+  flow: 0.7
+  fundamental: 0.3
+  replication: 0.5
+
+agents_enabled:
+  fundamental: false         # no crypto fundamentals source configured yet (see OPEN_QUESTIONS)
+  replication: false         # no traders/strategies selected yet (see OPEN_QUESTIONS)
