@@ -30,12 +30,16 @@ STRATEGY_RISKS = [1, 5, 10, 20]
 STRATEGY_LEVERAGES = [1, 3, 10]
 WARMUP = timedelta(days=120)            # EMA200 on 4h bars needs months of history to forget its seed
 SECOND_HALF = datetime(2026, 7, 1, tzinfo=timezone.utc)
-NULL_REPS = 20
+NULL_REPS = 200
 MIN_TEST_TRADES = 40
 
 
+_resampled: dict[tuple[int, str, int], pd.DataFrame] = {}
+
+
 def null_expectancy(champion: dict, data: dict[str, pd.DataFrame], trades: pd.DataFrame, cm) -> tuple[float, float]:
-    """Mean and 95th percentile of net expectancy (bps) of random entries with the champion's exits."""
+    """Mean and 95th percentile of net expectancy (bps) of random entries with the champion's exits, sampled
+    uniformly over the whole test window at the champion's per-asset trade count."""
     tf, side = champion["tf"], champion["side"]
     exit_ = tuple(champion["exit"])
     H = MAX_HOLD_MINUTES // tf
@@ -45,12 +49,17 @@ def null_expectancy(champion: dict, data: dict[str, pd.DataFrame], trades: pd.Da
     for _ in range(NULL_REPS):
         nets = []
         for asset, n in counts.items():
-            d = history.resample(data[asset], tf)
+            key = (id(data), asset, tf)
+            if key not in _resampled:
+                _resampled[key] = history.resample(data[asset], tf)
+            d = _resampled[key]
             pool = np.flatnonzero(d.index >= history.TEST_START)
             if len(pool) == 0:
                 continue
-            ent = np.sort(rng.choice(pool, size=min(len(pool), int(n * 1.5) + 1), replace=False))
-            t = simulate(d, ent, side, [exit_], H, asset, tf)[exit_].head(n)
+            ent = np.sort(rng.choice(pool, size=min(len(pool), 3 * n + 1), replace=False))
+            t = simulate(d, ent, side, [exit_], H, asset, tf)[exit_]
+            if len(t) > n:     # a random subset, not the earliest n (that would skip the end of the window)
+                t = t.iloc[np.sort(rng.choice(len(t), size=n, replace=False))]
             if len(t):
                 nets.append(cm.net(t["gross"].to_numpy(), t["hours"].to_numpy(), t["asset"].to_numpy()))
         if nets:
@@ -135,6 +144,8 @@ def run(frozen: dict | None = None, loader=history.load, start_equity: float = 5
             "test_days": test_days, "assets": sorted(data), "start_equity": start_equity,
             "configs_searched": frozen["configs_total"], "prior_2026_runs": len(prior),
             "test_files_cached_before_freeze": peeked_files or [], "headline_spec": headline,
+            "beats_null": int(strategies.get("beats_null", pd.Series(dtype=bool)).fillna(False).astype(bool).sum()),
+            "beats_null_expected_by_chance": round(0.05 * int((strategies.get("test_trades", pd.Series(dtype=float)) > 0).sum()), 1),
             "headline": hl.iloc[0].to_dict() if len(hl) else None}
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=1, default=str))
     entry = {"run_at": datetime.now(timezone.utc).isoformat(), "frozen_sha256": frozen["frozen_sha256"],

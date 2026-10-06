@@ -65,8 +65,9 @@ def bars5():
 @pytest.mark.parametrize("tf", TIMEFRAMES)
 def test_no_family_looks_ahead(bars5, tf):
     full = history.resample(bars5, tf)
+    hour_starts = np.flatnonzero(bars5.index.minute < 5)     # first 5m bar of each clock hour (bars sit at :02, :07, ...)
     for cut_hours in (300, 433, 517):
-        k5 = cut_hours * 12                                   # cut on an hour boundary (complete HTF bars)
+        k5 = int(hour_starts[cut_hours])                      # cut on a clock-hour boundary (complete HTF bars)
         part = history.resample(bars5.iloc[:k5], tf)
         last = part.index[-1]
         for fam in FAMILIES.values():
@@ -113,7 +114,8 @@ def _prices(assets=("BTC/USD",), periods=2000, path=None):
 def _trade(asset="BTC/USD", start_bar=0, bars=12, gross=0.01, stop=0.01, mae=0.005, side="long", strategy="s"):
     entry_ts = T0 + pd.Timedelta(minutes=5 * start_bar)
     return {"strategy": strategy, "asset": asset, "entry_ts": entry_ts,
-            "exit_ts": entry_ts + pd.Timedelta(minutes=5 * bars), "side": side, "entry": 100.0,
+            "exit_ts": entry_ts + pd.Timedelta(minutes=5 * bars),
+            "exit_bar_ts": entry_ts + pd.Timedelta(minutes=5 * (bars - 1)), "side": side, "entry": 100.0,
             "stop_frac": stop, "gross": gross, "hours": bars * 5 / 60, "mae": mae}
 
 
@@ -148,9 +150,9 @@ def test_drawdown_is_mark_to_market_with_concurrent_losers():
     path[5:10] = 99.1                                   # all eight sit 0.9% under water together
     rows = [_trade(asset=a, start_bar=0, bars=24, gross=0.005, stop=0.01, mae=0.009) for a in assets]
     r = simulate_portfolio(_trades(rows), PERP, risk_pct=5, leverage=20, prices=_prices(assets, path=path))
-    # 20x caps total notional at $10k (4 positions); a 0.9% dip on $10k is an 18% drawdown that realized-only
-    # accounting would have reported as 0%
-    assert r.final_equity > 500 and r.max_drawdown_pct == pytest.approx(18.0, abs=0.5)
+    # 20x caps total notional at $10k (4 positions); a 0.9% dip on $10k is 18% plus the entry-side half of the
+    # 16 bps round trip (1.6%): a 19.6% drawdown that realized-only accounting would have reported as 0%
+    assert r.final_equity > 500 and r.max_drawdown_pct == pytest.approx(19.6, abs=0.3)
 
 
 def test_exit_pnl_is_not_available_before_the_exit_bar_closes():
@@ -276,3 +278,64 @@ def test_ledger_blocks_refreeze_unless_contaminated(tmp_path):
 def test_source_hash_covers_indicators_and_portfolio():
     names = {Path(n).name for n in search.SOURCE_FILES}
     assert {"indicators.py", "portfolio.py", "test2026.py"} <= names
+
+
+def test_liquidated_position_stays_liquidated_through_a_drawdown_halt():
+    """An intrabar wick liquidates BTC (close stays flat); ETH/SOL then fall: the halt must not undo BTC's loss."""
+    assets = ["BTC/USD", "ETH/USD", "SOL/USD"]
+    prices = _prices(assets)
+    prices.loc[prices.index[20]:, ["ETH/USD", "SOL/USD"]] = 97.0          # -3% on closes
+    rows = [_trade(asset="BTC/USD", start_bar=0, bars=200, gross=0.0, stop=0.01, mae=0.06),  # wick past 20x liq
+            _trade(asset="ETH/USD", start_bar=0, bars=200, gross=-0.03, stop=0.01, mae=0.03, strategy="e"),
+            _trade(asset="SOL/USD", start_bar=0, bars=200, gross=-0.03, stop=0.01, mae=0.03, strategy="f")]
+    raw = simulate_portfolio(_trades(rows), PERP, risk_pct=2, leverage=20, prices=prices)
+    guarded = simulate_portfolio(_trades(rows), PERP, risk_pct=2, leverage=20, prices=prices, guardrails=True)
+    assert guarded.halted_at
+    assert guarded.final_equity <= raw.final_equity + 1e-6     # breakers can't turn a liquidation into a scratch
+
+
+def test_liquidation_on_closes_realizes_margin_plus_fee():
+    path = np.full(2000, 100.0)
+    path[10:] = 94.0                                           # 6% down on closes at 20x (liq distance 4.5%)
+    r = simulate_portfolio(_trades([_trade(start_bar=0, bars=100, gross=-0.06, stop=0.01, mae=0.06)]), PERP,
+                           risk_pct=2, leverage=20, prices=_prices(path=path))
+    notional = 0.02 * 500 / 0.01
+    assert r.liquidations == 1
+    assert r.final_equity == pytest.approx(500 - (notional / 20 + 0.005 * notional), abs=0.01)
+
+
+def test_signal_to_entry_gap_drops_the_trade():
+    n = 60
+    base = np.full(n, 100.0)
+    idx = pd.date_range("2025-01-01", periods=n, freq="5min", tz="UTC")
+    idx = idx.where(np.arange(n) <= 30, idx + pd.Timedelta(hours=2))   # 2h outage right after bar 30
+    df = pd.DataFrame({"open": base, "high": base + 0.5, "low": base - 0.5, "close": base, "volume": 1.0},
+                      index=pd.DatetimeIndex(idx))
+    trades = simulate(df, np.array([30, 40]), "long", [(1.0, 2.0)], 6, "BTC/USD", 5)[(1.0, 2.0)]
+    assert len(trades) == 1 and trades["entry_ts"].iloc[0] == df.index[41]
+
+
+def test_null_samples_the_whole_test_window():
+    from datetime import timedelta
+    from tradebot.research import test2026
+    idx = pd.date_range(history.TEST_START - timedelta(days=130), periods=(130 + 270) * 288, freq="5min")
+    rng = np.random.default_rng(1)
+    c = 100 * np.exp(np.cumsum(rng.normal(0, 0.001, len(idx))))
+    df5 = pd.DataFrame({"open": c, "high": c * 1.002, "low": c * 0.998, "close": c, "volume": 1.0}, index=idx)
+    champion = {"id": "x", "tf": 60, "side": "long", "exit": [1.5, 2.0]}
+    seen = []
+    orig = test2026.simulate
+
+    def spy(d, ent, *a, **k):
+        out = orig(d, ent, *a, **k)
+        seen.extend(out[(1.5, 2.0)]["entry_ts"].tolist())
+        return out
+    test2026.simulate = spy
+    try:
+        trades = pd.DataFrame({"asset": ["BTC/USD"] * 30})
+        test2026.NULL_REPS, reps = 5, test2026.NULL_REPS
+        test2026.null_expectancy(champion, {"BTC/USD": df5}, trades, PERP)
+    finally:
+        test2026.simulate, test2026.NULL_REPS = orig, reps
+    span = (idx[-1] - history.TEST_START)
+    assert max(seen) - history.TEST_START > 0.9 * span

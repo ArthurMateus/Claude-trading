@@ -49,8 +49,8 @@ ALPACA_SPOT = CostModel("alpaca_spot", fee_bps=25, slippage_bps=15, funding_bps_
 PERP = CostModel("perp", fee_bps=5, slippage_bps=3, funding_bps_8h=1.0, max_leverage=20, allow_short=True)
 COST_MODELS = {m.name: m for m in (ALPACA_SPOT, PERP)}
 
-TRADE_COLUMNS = ["asset", "entry_ts", "exit_ts", "side", "entry", "exit", "stop_frac", "gross", "hours", "mae",
-                 "exit_reason"]
+TRADE_COLUMNS = ["asset", "entry_ts", "exit_ts", "exit_bar_ts", "side", "entry", "exit", "stop_frac", "gross",
+                 "hours", "mae", "exit_reason"]
 
 
 def simulate(df: pd.DataFrame, entries: np.ndarray, side: str, exits: list[tuple[float, float]],
@@ -63,10 +63,11 @@ def simulate(df: pd.DataFrame, entries: np.ndarray, side: str, exits: list[tuple
     tf = pd.Timedelta(minutes=tf_minutes)
     entries = entries[(entries + 1 + H <= n)]
     entries = entries[np.isfinite(a[entries]) & (a[entries] > 0)]
-    # Drop windows that span a data gap (exchange outage): the hold must be H consecutive bars of wall-clock time.
+    # Drop windows that span a data gap (exchange outage), including a gap between the signal bar and the entry
+    # bar: signal + H hold bars must be consecutive in wall-clock time.
     if len(entries):
-        span = idx[entries + H] - idx[entries + 1]
-        entries = entries[np.asarray(span <= (H - 1) * tf)]
+        span = idx[entries + H] - idx[entries]
+        entries = entries[np.asarray(span <= H * tf)]
     if len(entries) == 0:
         return {ex: pd.DataFrame(columns=TRADE_COLUMNS) for ex in exits}
     e = entries + 1
@@ -106,7 +107,8 @@ def simulate(df: pd.DataFrame, entries: np.ndarray, side: str, exits: list[tuple
         mae = np.maximum(0.0, sgn * (entry - worst) / entry)
         reason = np.where(stopped, "stop", np.where(targeted, "take_profit", "time_stop"))
         out[(stop_mult, rr)] = pd.DataFrame({
-            "asset": asset, "entry_ts": idx[e], "exit_ts": idx[exit_bar] + tf, "side": side, "entry": entry,
+            "asset": asset, "entry_ts": idx[e], "exit_ts": idx[exit_bar] + tf, "exit_bar_ts": idx[exit_bar],
+            "side": side, "entry": entry,
             "exit": exit_px, "stop_frac": d / entry, "gross": gross, "hours": (k + 1) * tf_minutes / 60,
             "mae": mae, "exit_reason": reason})[keep].reset_index(drop=True)
     return out

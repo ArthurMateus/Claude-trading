@@ -158,7 +158,10 @@ def write(out_dir: Path = RESULTS) -> Path:
         "",
         "## Strategy champions (one per family and side, per venue)",
         "",
-        "`beats_null` = test expectancy above the 95th percentile of random entries with the same exits. "
+        f"**{meta.get('beats_null', 0)} champion(s) beat the random-entry null; about "
+        f"{meta.get('beats_null_expected_by_chance', 0)} would by pure chance** (5% of those with test trades).",
+        "",
+        "`beats_null` = test expectancy above the 95th percentile of 200 random-entry runs with the same exits. "
         "`noise` = fewer than 40 test trades. Jan–Jun vs Jul–now: the families were designed by a model with "
         "training data to mid-2026, so Jul–now is the cleaner window.",
         "",

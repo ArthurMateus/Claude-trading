@@ -61,8 +61,8 @@ at the close of their bar, so their P&L can't be reused early. Trades of one con
 overlap, and windows that span exchange data gaps are dropped.
 
 **Every strategy is compared with a random-entry null:** the same exits, side and timeframe on random entries at
-the same per-asset frequency, under the same costs, 20 times. `beats_null` means test expectancy above the
-null's 95th percentile. Fewer than 40 test trades is flagged `noise`. Results are also split into **Jan–Jun** and
+the same per-asset frequency, under the same costs, 200 times, sampled across the whole window. `beats_null` means test expectancy above the
+null's 95th percentile; the report also says how many champions would beat it by pure chance (5%). Fewer than 40 test trades is flagged `noise`. Results are also split into **Jan–Jun** and
 **Jul–now 2026**; the second half is the cleaner window (see caveats).
 
 ## Risk × leverage

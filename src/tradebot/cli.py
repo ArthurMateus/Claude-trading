@@ -128,6 +128,7 @@ def cmd_research(args) -> None:
         from .research import report
         print(json.dumps(res["meta"], indent=1))
         print(f"report: {report.write()}")
+        print("Commit research/test_ledger.jsonl and the results now: the ledger is the record that 2026 was viewed.")
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -87,13 +87,22 @@ def simulate_portfolio(trades: pd.DataFrame, cm: CostModel, risk_pct: float, lev
     mtm_ts, mtm_eq = [], []
 
     def unrealized(p, step) -> float:
+        """Open P&L at a 5m close, net of the entry-side half of the round-trip cost."""
         if step < 0:
-            return 0.0
+            return -0.5 * p["notional"] * p["rt_cost"]
         c = closes[step, p["col"]]
         if not np.isfinite(c):
-            return 0.0
-        u = p["sign"] * p["notional"] * (c / p["entry"] - 1)
+            return -0.5 * p["notional"] * p["rt_cost"]
+        u = p["sign"] * p["notional"] * (c / p["entry"] - 1) - 0.5 * p["notional"] * p["rt_cost"]
         return max(u, -p["margin"]) if lev > 1 else u
+
+    def close_now(p, step):
+        """Forced close (drawdown halt / ruin) at the last close. It can never beat an outcome that already
+        happened: a liquidation, or a stop/target inside an exit bar that is in progress."""
+        mtm_exit = unrealized(p, step) - 0.5 * p["notional"] * p["rt_cost"]
+        if p["liq"] or clock[i] >= p["exit_bar_ts"]:
+            mtm_exit = min(mtm_exit, p["pnl"])
+        realize(p, mtm_exit)
 
     def realize(p, pnl):
         nonlocal realized, worst, liqs
@@ -108,9 +117,15 @@ def simulate_portfolio(trades: pd.DataFrame, cm: CostModel, risk_pct: float, lev
     next_entry = iter(steps)
     target = next(next_entry, None)
     while i < len(clock):
-        # 1. exits whose bar has closed by now
+        # 1. exits whose bar has closed by now; positions a 5m close has pushed past liquidation are gone
         for p in [p for p in open_pos if p["exit_pos"] <= i]:
             realize(p, p["pnl"])
+        if lev > 1 and i > 0:
+            for p in list(open_pos):
+                c = closes[i - 1, p["col"]]
+                if np.isfinite(c) and p["sign"] * (c / p["entry"] - 1) <= -(1 / lev - MAINTENANCE):
+                    p["liq"] = 1
+                    realize(p, min(p["pnl"], -(p["margin"] + LIQ_FEE * p["notional"])))
         # 2. mark to market on the last completed 5m close
         equity = realized + sum(unrealized(p, i - 1) for p in open_pos)
         d = clock[i].floor("D")
@@ -123,13 +138,14 @@ def simulate_portfolio(trades: pd.DataFrame, cm: CostModel, risk_pct: float, lev
         mtm_eq.append(equity)
         if equity <= start_equity * 0.01:
             for p in list(open_pos):
-                realize(p, unrealized(p, i - 1) - p["notional"] * p["rt_cost"])
+                close_now(p, i - 1)
             ruined = True
+            skipped += sum(len(v) for k, v in by_step.items() if k >= i)
             break
         if guardrails and not halted_at and dd >= max_dd_pct:
             halted_at = str(clock[i])
             for p in list(open_pos):
-                realize(p, unrealized(p, i - 1) - p["notional"] * p["rt_cost"])
+                close_now(p, i - 1)
         # 3. entries at this bar's open
         for j in by_step.get(i, []):
             r = t.iloc[j]
@@ -149,6 +165,7 @@ def simulate_portfolio(trades: pd.DataFrame, cm: CostModel, risk_pct: float, lev
             open_pos.append({"asset": r.asset, "col": col[r.asset], "sign": 1.0 if r.side == "long" else -1.0,
                              "entry": r.entry, "notional": notional, "margin": margin, "pnl": pnl,
                              "exit_pos": int(exit_pos[j]), "rt_cost": rt_cost[j], "liq": int(liquidated),
+                             "exit_bar_ts": getattr(r, "exit_bar_ts", r.exit_ts),
                              "worst": -min(r.mae, liq_dist) * notional / max(equity, 1e-9) * 100})
         # 4. advance: bar by bar while exposed, otherwise jump to the next entry
         if open_pos:
@@ -159,11 +176,13 @@ def simulate_portfolio(trades: pd.DataFrame, cm: CostModel, risk_pct: float, lev
             i = target if target is not None else len(clock)
     for p in list(open_pos):               # trades running past the data end settle at their simulated exit
         realize(p, p["pnl"])
+    if not ruined:
+        skipped += sum(len(v) for k, v in by_step.items() if k >= len(clock))   # entries after the price data
     final = realized
 
     curve = pd.Series(mtm_eq + [final], index=pd.DatetimeIndex(mtm_ts + [clock[-1] if len(clock) else pd.Timestamp.now(tz="UTC")]))
     curve = curve.groupby(level=0).last()
-    daily = curve.resample("1D").last().ffill()
+    daily = curve.clip(lower=0).resample("1D").last().ffill()
     rets = daily.pct_change().dropna()
     sharpe = float(rets.mean() / rets.std() * math.sqrt(365)) if len(rets) > 2 and rets.std() > 0 else 0.0
     arr = np.array(pnls)
